@@ -17,10 +17,8 @@ description: CLI tool to analyze V8 .cpuprofile files and print top functions by
 
 **Always run `profano --help` first.** The help output is the source of truth for all commands, options, and examples. Read the full untruncated output — do not pipe it through `head`, `tail`, or `sed`.
 
-For full setup, usage examples, how to generate `.cpuprofile` files (Node, Vitest with a ready-to-copy `vitest.config.ts`, Chrome DevTools), and how to read the output columns, **fetch the README**:
+For full setup, usage examples, how to generate `.cpuprofile` files (Node, Vitest with a ready-to-copy `vitest.config.ts`, Chrome DevTools), and how to read the output columns, fetch the README:
 
 ```bash
 curl -s https://raw.githubusercontent.com/remorses/profano/main/README.md
 ```
-
-The README has the complete reference. Do not duplicate it here.
