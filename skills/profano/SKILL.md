@@ -1,6 +1,6 @@
 ---
 name: profano
-description: CLI tool to analyze V8 .cpuprofile files and print top functions by self-time or total-time in the terminal. Use when debugging CPU performance issues, investigating slow tests, or reviewing cpu profiles without opening Chrome DevTools.
+description: CLI tool to analyze V8 .cpuprofile files and print top functions by self-time or total-time in the terminal. ALWAYS load this skill when CPU profiling JavaScript or TypeScript programs (Node, Vitest, Bun, Chrome DevTools exports) — it shows how to generate .cpuprofile files and how to inspect them from the terminal without opening Chrome DevTools.
 ---
 
 # profano
