@@ -39,6 +39,8 @@ profano profile.cpuprofile -n 50
 
 Globs are expanded automatically, so you can pass multiple profiles at once.
 
+Run `profano --help` to see all options and more examples.
+
 ## Output
 
 ```
@@ -58,15 +60,61 @@ Sort:     self
 
 Idle, GC, and VM pseudo-frames (`(idle)`, `(garbage collector)`, `(program)`, `(root)`) are excluded from the function list so they don't drown out real code.
 
+Start with `--sort self` to find CPU-bound leaves (hot inner functions). Switch to `--sort total` to find expensive callers that dominate wall time.
+
 ## Generating .cpuprofile files
 
-Node.js has a built-in CPU profiler. Enable it with `--cpu-prof`:
+### Node.js
+
+Node has a built-in CPU profiler. Pass `--cpu-prof` when running a script and it writes a `.cpuprofile` file on exit:
 
 ```bash
 node --cpu-prof --cpu-prof-dir=./tmp/cpu-profiles ./script.js
 ```
 
-You can also use the `inspector` module programmatically, or enable profiling in Vitest via env vars like `VITEST_CPU_PROF=1` depending on your test setup.
+### Vitest
+
+Enable CPU profiling conditionally via an env var so you can opt in per-run. Wire Node's `--cpu-prof` flag into the pool worker's `execArgv` in `vitest.config.ts`:
+
+```ts
+// vitest.config.ts
+import { defineConfig } from 'vitest/config'
+
+const cpuProf = process.env.VITEST_CPU_PROF === '1'
+
+export default defineConfig({
+  test: {
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        // Run one fork at a time when profiling so the output is
+        // manageable and the machine does not hang under load.
+        maxForks: cpuProf ? 1 : undefined,
+        execArgv: cpuProf
+          ? ['--cpu-prof', '--cpu-prof-dir=tmp/cpu-profiles']
+          : [],
+      },
+    },
+  },
+})
+```
+
+Then profile a single test file:
+
+```bash
+VITEST_CPU_PROF=1 pnpm test --run src/some-file.test.ts
+profano tmp/cpu-profiles/CPU.*.cpuprofile
+```
+
+Always profile one file at a time. Running the whole suite with profiling enabled generates dozens of overlapping `.cpuprofile` files and can overload the machine.
+
+### Chrome DevTools
+
+You can also record CPU profiles from Chrome DevTools (Performance tab → Record → stop → "Save profile…") and feed the exported `.cpuprofile` file to profano.
+
+### Programmatic inspector
+
+For fine-grained control, use Node's built-in `node:inspector` module to start and stop the profiler around a specific code path and write the result to disk.
 
 ## License
 
