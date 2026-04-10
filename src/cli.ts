@@ -6,8 +6,12 @@
 import { goke } from 'goke'
 import { z } from 'zod'
 import { globSync } from 'node:fs'
-import { loadProfile, analyze } from './parse.js'
-import { formatTable, type SortMode } from './format.js'
+import { createRequire } from 'node:module'
+import { loadProfile, analyze } from './parse.ts'
+import { formatTable, type SortMode } from './format.ts'
+
+const require = createRequire(import.meta.url)
+const packageJson = require('../package.json') as { version: string }
 
 const cli = goke('profano')
 
@@ -59,5 +63,5 @@ cli
   })
 
 cli.help()
-cli.version('0.0.1')
+cli.version(packageJson.version)
 cli.parse()

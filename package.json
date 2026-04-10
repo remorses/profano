@@ -3,17 +3,57 @@
   "version": "0.0.1",
   "description": "CLI tool to analyze .cpuprofile files and print top functions by self-time in the terminal",
   "type": "module",
-  "bin": {
-    "profano": "./dist/cli.js"
+  "bin": "dist/cli.js",
+  "main": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/cli.d.ts",
+      "default": "./dist/cli.js"
+    },
+    "./src": {
+      "types": "./src/cli.ts",
+      "default": "./src/cli.ts"
+    },
+    "./src/*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
   },
   "files": [
-    "dist"
+    "src",
+    "dist",
+    "README.md",
+    "SKILL.md"
   ],
+  "keywords": [
+    "cpu",
+    "profile",
+    "cpuprofile",
+    "profiler",
+    "v8",
+    "performance",
+    "cli",
+    "analyze",
+    "self-time",
+    "flamegraph"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/remorses/profano.git"
+  },
+  "homepage": "https://github.com/remorses/profano",
+  "bugs": {
+    "url": "https://github.com/remorses/profano/issues"
+  },
+  "license": "MIT",
+  "author": "Tommy <beats.by.morse@gmail.com>",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "tsc"
+    "prepublishOnly": "rimraf dist \"*.tsbuildinfo\" && pnpm build"
   },
   "dependencies": {
     "goke": "^6.3.0",
@@ -21,7 +61,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
+    "rimraf": "^6.0.1",
     "typescript": "^5.8.3"
-  },
-  "license": "MIT"
+  }
 }

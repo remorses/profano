@@ -1,6 +1,6 @@
 // Format profile analysis results as a terminal table.
 
-import type { FunctionStat } from './parse.js'
+import type { FunctionStat } from './parse.ts'
 
 export type SortMode = 'self' | 'total'
 
