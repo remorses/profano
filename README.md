@@ -156,6 +156,95 @@ Bun also supports `--cpu-prof-name <filename>` for a fixed output name and `--cp
 
 You can also record CPU profiles from Chrome DevTools (Performance tab → Record → stop → "Save profile…") and feed the exported `.cpuprofile` file to profano.
 
+### Browser pages via playwriter
+
+You can drive Chrome's V8 CPU profiler over CDP from the shell using [playwriter](https://playwriter.dev), which makes it scriptable and agent-friendly. playwriter has no dedicated profiling docs or helpers — it simply forwards raw CDP `Profiler.*` commands — so the steps below are the canonical workflow.
+
+#### 1. Install playwriter and read the skill
+
+```bash
+npm install -g playwriter@latest
+playwriter skill
+```
+
+Read the full skill output before continuing — it covers session isolation, the sandboxed filesystem, and the `getCDPSession` helper.
+
+#### 2. Start a playwriter session from your project root
+
+Run `playwriter session new` from the directory you want your profiles written to. The session sandbox captures that directory at creation time and only allows writes inside it (plus `/tmp` and `os.tmpdir()`).
+
+```bash
+playwriter session new
+# Session 1 created. Use with: playwriter -s 1 -e "..."
+```
+
+#### 3. Open a new page
+
+```bash
+playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("http://localhost:3000", { waitUntil: "domcontentloaded" })'
+```
+
+Replace the URL with your dev server or any page you want to profile.
+
+#### 4. Start the V8 profiler
+
+Attach a CDP session via playwriter's `getCDPSession` helper (do **not** use `page.context().newCDPSession()` — it does not work through the playwriter relay), then enable and start the profiler.
+
+```bash
+playwriter -s 1 -e "$(cat <<'EOF'
+const cdp = await getCDPSession({ page: state.page })
+state.cdp = cdp
+await cdp.send('Profiler.enable')
+// microseconds — 1000 = 1ms sample interval (default). Lower = finer detail, bigger file.
+await cdp.send('Profiler.setSamplingInterval', { interval: 1000 })
+await cdp.send('Profiler.start')
+console.log('profiling started')
+EOF
+)"
+```
+
+#### 5. Interact with the page
+
+Do whatever triggers the code path you want to profile — click a button, scroll, navigate, type into a form. Only the work that happens between `Profiler.start` and `Profiler.stop` ends up in the profile.
+
+```bash
+playwriter -s 1 -e 'await state.page.locator("button").first().click(); await state.page.waitForTimeout(2000)'
+```
+
+#### 6. Stop the profiler and save the .cpuprofile
+
+```bash
+playwriter -s 1 -e "$(cat <<'EOF'
+const { profile } = await state.cdp.send('Profiler.stop')
+await state.cdp.send('Profiler.disable')
+const fs = require('node:fs')
+fs.mkdirSync('./tmp/cpu-profiles', { recursive: true })
+const path = `./tmp/cpu-profiles/browser-${Date.now()}.cpuprofile`
+fs.writeFileSync(path, JSON.stringify(profile))
+console.log('wrote', path, '-', profile.samples.length, 'samples')
+EOF
+)"
+```
+
+The relative `./tmp/cpu-profiles/` path works because the session was created from your project root in step 2.
+
+#### 7. Analyze with profano
+
+```bash
+# hot leaves (default)
+profano ./tmp/cpu-profiles/browser-*.cpuprofile
+
+# expensive callers
+profano ./tmp/cpu-profiles/browser-*.cpuprofile --sort total -n 20
+```
+
+#### Gotchas
+
+- **Session cwd is locked** — the playwriter sandbox captures the shell's cwd at session creation and reuses it for all later `-e` calls in that session. If writes to your project fail with `EPERM: access outside allowed directories`, create a fresh session from your project root.
+- **Use `getCDPSession({ page })`** — not `page.context().newCDPSession()`. Only the playwriter helper is routed through the relay.
+- **Sampling interval is in microseconds** — `Profiler.setSamplingInterval({ interval })` takes microseconds, not milliseconds. 1000 = 1ms (the default). Drop to 100 for high-resolution micro-profiling, raise to 10000 for long runs where you want a smaller file.
+- **Extension overhead shows up in the profile** — CDP's V8 profiler sees every script running in the page's main world, including scripts injected by browser extensions like React DevTools. Profile in an incognito window with extensions disabled to see only your own code.
+
 ### Programmatic inspector
 
 For fine-grained control, use Node's built-in `node:inspector` module to start and stop the profiler around a specific code path and write the result to disk.
