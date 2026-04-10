@@ -39,7 +39,7 @@ profano profile.cpuprofile -n 50
 
 Globs are expanded automatically, so you can pass multiple profiles at once.
 
-Run `profano --help` to see all options and more examples.
+Always run `profano --help` to see all options and more examples.
 
 ## Output
 
@@ -107,6 +107,43 @@ profano tmp/cpu-profiles/CPU.*.cpuprofile
 ```
 
 Always profile one file at a time. Running the whole suite with profiling enabled generates dozens of overlapping `.cpuprofile` files and can overload the machine.
+
+### Dev servers and long-running scripts
+
+Node's `--cpu-prof` flag writes the `.cpuprofile` on **normal process exit**. You don't need a custom signal handler — Node flushes the profile automatically when the process exits on `SIGINT` (`Ctrl+C`) or `SIGTERM` (`kill <pid>`), as long as nothing upstream sends `SIGKILL` (`kill -9`).
+
+This means you can profile a dev server exactly like a normal script: start it with `--cpu-prof`, reproduce the slow path, then stop it with `Ctrl+C` or `kill <pid>`. The profile lands in the `--cpu-prof-dir` directory.
+
+**Plain Node dev server:**
+
+```bash
+node --cpu-prof --cpu-prof-dir=./tmp/cpu-profiles ./server.js
+# reproduce the slow path...
+# then Ctrl+C (or `kill <pid>` from another terminal)
+profano ./tmp/cpu-profiles/CPU.*.cpuprofile
+```
+
+**`pnpm dev` (or any script that spawns Node):**
+
+Use `NODE_OPTIONS` so every Node process spawned by the script inherits the flag:
+
+```bash
+NODE_OPTIONS="--cpu-prof --cpu-prof-dir=./tmp/cpu-profiles" pnpm dev
+# reproduce the slow path...
+# then Ctrl+C
+profano ./tmp/cpu-profiles/CPU.*.cpuprofile
+```
+
+If `pnpm dev` spawns multiple Node workers (Next.js, Vite, Nest, etc.), each one gets its own `CPU.<timestamp>.<pid>.*.cpuprofile`. Pass them all to profano at once — profano will render a separate table per file with a header separator so you can tell which worker was hot.
+
+To stop the process cleanly from another terminal, send `SIGTERM` (not `SIGKILL`):
+
+```bash
+kill <pid>        # sends SIGTERM, profile gets written
+kill -TERM <pid>  # same thing, explicit
+# NEVER use:
+kill -9 <pid>     # SIGKILL, kernel kills the process before Node can flush
+```
 
 ### Chrome DevTools
 
