@@ -14,6 +14,16 @@ Or run on demand:
 npx profano profile.cpuprofile
 ```
 
+## Agent Skill
+
+profano ships with a skill file that teaches AI coding agents when and how to use it. Install it with:
+
+```bash
+npx -y skills add remorses/profano
+```
+
+This installs [skills](https://skills.sh) for AI coding agents like Claude Code, Cursor, Windsurf, and others. The skill lives at `skills/profano/SKILL.md` in this repo.
+
 ## Usage
 
 ```bash

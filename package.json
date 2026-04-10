@@ -24,8 +24,8 @@
   "files": [
     "src",
     "dist",
-    "README.md",
-    "SKILL.md"
+    "skills",
+    "README.md"
   ],
   "keywords": [
     "cpu",
