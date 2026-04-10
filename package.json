@@ -1,6 +1,6 @@
 {
   "name": "profano",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "CLI tool to analyze .cpuprofile files and print top functions by self-time in the terminal",
   "type": "module",
   "bin": "dist/cli.js",

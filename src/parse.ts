@@ -1,9 +1,26 @@
-// Parse V8 .cpuprofile files and compute self-time / total-time per node.
+// Parse V8 .cpuprofile files and compute self-time / total-time per function.
 // The .cpuprofile format is a JSON object with:
-//   nodes: array of { id, callFrame: { functionName, url, lineNumber, ... }, children?: number[] }
+//   nodes: array of { id, callFrame: { functionName, url, scriptId, lineNumber, columnNumber }, children?: number[] }
 //   samples: array of node IDs (one per sampling tick)
 //   startTime / endTime: microseconds
 //   timeDeltas: array of microsecond deltas between samples
+//
+// Why function identity matters: V8 creates a SEPARATE tree node per distinct
+// call site, so a recursive or hot function appears as many profiler nodes
+// with identical callFrames. Without identity-based dedup the same function
+// gets counted once per node per sample stack — which inflates %Total above
+// 100% on any profile with recursion or deep framework call chains.
+//
+// Identity key: we match Chrome DevTools (ProfileTreeModel.ts:21) and
+// speedscope (src/import/chrome.ts:206-212) and identify a function by
+// (functionName, scriptId, lineNumber, columnNumber). Dropping columnNumber
+// merges distinct anonymous functions on a minified single line; dropping
+// scriptId merges functions from two different loaded copies of the same
+// script (iframes, sandboxes, etc).
+//
+// Key format: JSON.stringify([name, scriptId, line, column]). Using JSON
+// instead of a delimiter string avoids collisions when functionName contains
+// any separator character (| : @ etc).
 
 import fs from 'node:fs'
 
@@ -32,7 +49,9 @@ export interface CpuProfile {
 export interface FunctionStat {
   functionName: string
   url: string
+  scriptId: string
   lineNumber: number
+  columnNumber: number
   selfSamples: number
   selfPercent: number
   /** Percent of non-idle active samples (self) */
@@ -44,6 +63,16 @@ export interface FunctionStat {
 }
 
 const IDLE_NAMES = new Set(['(idle)', '(garbage collector)', '(program)', '(root)'])
+
+/** Full metadata associated with an identity key, kept in a side map so we
+ * never have to parse the key string back into its components. */
+interface IdentityMeta {
+  functionName: string
+  url: string
+  scriptId: string
+  lineNumber: number
+  columnNumber: number
+}
 
 export function loadProfile(filePath: string): CpuProfile {
   const raw = fs.readFileSync(filePath, 'utf8')
@@ -71,47 +100,51 @@ export function analyze(profile: CpuProfile): {
     }
   }
 
-  // Identity key used everywhere below so a function identity (name+url+line)
-  // never gets double-counted across multiple profiler nodes that happen to
-  // share the same callFrame. V8 creates a separate tree node per distinct
-  // call site, so a recursive function like updateFiberRecursively can appear
-  // as many nodes with identical callFrames. Without identity-based dedup the
-  // same function is counted once per node per sample stack, which inflates
-  // %Total far above 100%.
-  const identityOf = (node: ProfileNode): string => {
-    const { functionName, url, lineNumber } = node.callFrame
-    return `${functionName}|${url}|${lineNumber}`
+  // Cache identity key + metadata per node id. Computed once per node so the
+  // hot sample-walk loop below only does a Map lookup instead of rebuilding
+  // the string. Also lets us grab the full callFrame metadata later without
+  // parsing the key back.
+  const identityByNodeId = new Map<number, { key: string; meta: IdentityMeta }>()
+  const metaByKey = new Map<string, IdentityMeta>()
+  for (const node of profile.nodes) {
+    const { functionName, url, scriptId, lineNumber, columnNumber } = node.callFrame
+    // JSON.stringify so the key cannot collide with function names containing
+    // separator characters. Only fields that disambiguate identity are in the
+    // key — url is stored in meta for display only since scriptId already
+    // uniquely identifies the script within a single profile.
+    const key = JSON.stringify([functionName, scriptId, lineNumber, columnNumber])
+    const meta: IdentityMeta = { functionName, url, scriptId, lineNumber, columnNumber }
+    identityByNodeId.set(node.id, { key, meta })
+    if (!metaByKey.has(key)) {
+      metaByKey.set(key, meta)
+    }
   }
 
-  // Self-time per identity. Each sample contributes to exactly one leaf node,
+  // Self-time per identity. Each sample contributes to exactly one leaf node
   // so summing by identity can never exceed sampleCount.
   const selfByIdentity = new Map<string, number>()
   for (const id of profile.samples) {
-    const node = nodes.get(id)
-    if (!node) continue
-    const key = identityOf(node)
-    selfByIdentity.set(key, (selfByIdentity.get(key) || 0) + 1)
+    const entry = identityByNodeId.get(id)
+    if (!entry) continue
+    selfByIdentity.set(entry.key, (selfByIdentity.get(entry.key) || 0) + 1)
   }
 
   // Total-time (inclusive) per identity. For each sample, walk from the
-  // sampled leaf up to root and increment an identity at most ONCE per
+  // sampled leaf up to root and increment each identity AT MOST ONCE per
   // sample — so a function that appears on every active sample's stack tops
   // out at exactly nonIdleSamples, giving %Total <= 100%.
   const totalByIdentity = new Map<string, number>()
   for (const id of profile.samples) {
-    const visitedNodes = new Set<number>()          // break node-level cycles
+    const visitedNodes = new Set<number>()          // defensive — break node-level cycles
     const visitedIdentities = new Set<string>()     // per-sample identity dedup
     let current: number | undefined = id
     while (current !== undefined) {
       if (visitedNodes.has(current)) break
       visitedNodes.add(current)
-      const node = nodes.get(current)
-      if (node) {
-        const key = identityOf(node)
-        if (!visitedIdentities.has(key)) {
-          visitedIdentities.add(key)
-          totalByIdentity.set(key, (totalByIdentity.get(key) || 0) + 1)
-        }
+      const entry = identityByNodeId.get(current)
+      if (entry && !visitedIdentities.has(entry.key)) {
+        visitedIdentities.add(entry.key)
+        totalByIdentity.set(entry.key, (totalByIdentity.get(entry.key) || 0) + 1)
       }
       current = parentMap.get(current)
     }
@@ -126,38 +159,36 @@ export function analyze(profile: CpuProfile): {
     }
   }
 
-  // Aggregate FunctionStat entries directly from the per-identity maps.
-  const fnMap = new Map<string, FunctionStat>()
-  const allKeys = new Set<string>([...selfByIdentity.keys(), ...totalByIdentity.keys()])
+  // Build FunctionStat entries from the per-identity maps using metaByKey
+  // for the source callFrame info. Never parse the key string back.
+  const functions: FunctionStat[] = []
+  const allKeys = new Set<string>([
+    ...selfByIdentity.keys(),
+    ...totalByIdentity.keys(),
+  ])
   for (const key of allKeys) {
-    const [functionName, url, lineStr] = key.split('|')
-    if (IDLE_NAMES.has(functionName ?? '')) continue
+    const meta = metaByKey.get(key)
+    if (!meta) continue
+    if (IDLE_NAMES.has(meta.functionName)) continue
     const self = selfByIdentity.get(key) || 0
     const total = totalByIdentity.get(key) || 0
     if (self === 0 && total === 0) continue
-    fnMap.set(key, {
-      functionName: functionName || '(anonymous)',
-      url: url ?? '',
-      lineNumber: Number(lineStr ?? -1),
+    functions.push({
+      functionName: meta.functionName || '(anonymous)',
+      url: meta.url,
+      scriptId: meta.scriptId,
+      lineNumber: meta.lineNumber,
+      columnNumber: meta.columnNumber,
       selfSamples: self,
-      selfPercent: 0,
-      activePercent: 0,
+      selfPercent: sampleCount > 0 ? (self / sampleCount) * 100 : 0,
+      activePercent: nonIdleSamples > 0 ? (self / nonIdleSamples) * 100 : 0,
       totalSamples: total,
-      totalPercent: 0,
-      totalActivePercent: 0,
+      totalPercent: sampleCount > 0 ? (total / sampleCount) * 100 : 0,
+      totalActivePercent: nonIdleSamples > 0 ? (total / nonIdleSamples) * 100 : 0,
     })
   }
 
-  // Compute percentages, sort by self-time by default
-  const functions: FunctionStat[] = [...fnMap.values()]
-    .map((fn) => ({
-      ...fn,
-      selfPercent: sampleCount > 0 ? (fn.selfSamples / sampleCount) * 100 : 0,
-      activePercent: nonIdleSamples > 0 ? (fn.selfSamples / nonIdleSamples) * 100 : 0,
-      totalPercent: sampleCount > 0 ? (fn.totalSamples / sampleCount) * 100 : 0,
-      totalActivePercent: nonIdleSamples > 0 ? (fn.totalSamples / nonIdleSamples) * 100 : 0,
-    }))
-    .sort((a, b) => b.selfSamples - a.selfSamples)
+  functions.sort((a, b) => b.selfSamples - a.selfSamples)
 
   const durationSeconds = (profile.endTime - profile.startTime) / 1e6
 

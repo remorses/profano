@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.0.5
+
+1. **Fixed two function-identity bugs** — the identity used to group profile samples into one row per function was too weak, so different functions were silently merged into a single row on real profiles. Both issues were flagged by an oracle code review against Chrome DevTools and speedscope's own identity rules.
+
+   **Missing `columnNumber` and `scriptId`.** Chrome DevTools uses `functionName@scriptId:lineNumber:columnNumber` as its identity key (`ProfileTreeModel.ts:21`) and speedscope uses `name:file:line:col` (`src/import/chrome.ts:206-212`). profano was using only `functionName|url|lineNumber`, which merges:
+
+   - different anonymous functions on the same minified line (very common in `bundle.js:0` where dozens of functions share one logical line)
+   - two different loaded copies of the same script (iframes, sandboxes, VM scripts)
+
+   After the fix, profano's identity is `(functionName, scriptId, lineNumber, columnNumber)` — matching DevTools. On the react.dev browser profile used to validate the `0.0.3` fix, the number of distinct function rows went from ~417 to ~492, and the former top `(anonymous)` row that claimed `756 total samples` is now correctly split into multiple distinct entries, the largest showing `247 samples / 51.5%`.
+
+   **Unsafe `key.split('|')`.** profano built the identity key by concatenating fields with `|` and later parsed it back with `key.split('|')`. That is lossy — a function literally named `a|b|c` would round-trip to `functionName: "a"`, `url: "b"`, `lineNumber: NaN`. Fix: the identity key is now `JSON.stringify([functionName, scriptId, lineNumber, columnNumber])` (delimiter-safe by construction) and the full metadata is stored in a side `Map<string, IdentityMeta>` so profano never has to parse the key back at all.
+
+2. **`FunctionStat` now exposes `scriptId` and `columnNumber`** — the aggregated rows returned by `analyze()` carry the full location info from the source `callFrame`, not just `functionName`, `url`, and `lineNumber`. This is a type-level addition and does not change the default CLI output.
+
+3. **Cached identity per node id** — the identity key and metadata are computed once per profile node in a single pre-pass and looked up from a `Map<number, { key, meta }>` inside the hot ancestor-walk loop. Previously the key was rebuilt on every ancestor visit (N samples × D stack depth), which was a minor perf hit on large profiles.
+
+4. **Added 5 regression tests** covering the new edge cases (`src/parse.test.ts` — 9 tests total now):
+
+   - same `functionName/url/line`, different **column** → distinct rows
+   - same `functionName/url/line/column`, different **scriptId** → distinct rows
+   - `functionName` containing `|` → round-trips correctly
+   - leaf `foo` + ancestor `foo` in the same sample → `selfSamples=3` AND `totalSamples=3`
+   - empty `samples` array → no crash, empty result
+
 ## 0.0.4
 
 1. **Fixed multi-file analysis** — passing multiple `.cpuprofile` files as positional args previously showed a table for only the FIRST file, silently ignoring the rest. Cause: the command signature was `<files...>`, which goke parsed as a single required arg named `files...` (literal, trailing dots) instead of a variadic arg, because goke's variadic parser specifically looks for `...` at the **start** of the bracket content (`[...files]`), not the end. Switched the signature to `[...files]` so `profano a.cpuprofile b.cpuprofile c.cpuprofile` now renders all three tables with the `━━━` header separator between them.
