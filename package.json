@@ -1,6 +1,6 @@
 {
   "name": "profano",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "CLI tool to analyze .cpuprofile files and print top functions by self-time in the terminal",
   "type": "module",
   "bin": "dist/cli.js",
@@ -53,7 +53,8 @@
     "build": "tsc && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "rimraf dist \"*.tsbuildinfo\" && pnpm build"
+    "test": "vitest run",
+    "prepublishOnly": "rimraf dist \"*.tsbuildinfo\" && pnpm test && pnpm build"
   },
   "dependencies": {
     "goke": "^6.3.0",
@@ -62,6 +63,7 @@
   "devDependencies": {
     "@types/node": "^22.15.0",
     "rimraf": "^6.0.1",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.4"
   }
 }

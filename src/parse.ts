@@ -71,63 +71,81 @@ export function analyze(profile: CpuProfile): {
     }
   }
 
-  // Count self-time samples per node
-  const selfCounts = new Map<number, number>()
-  for (const id of profile.samples) {
-    selfCounts.set(id, (selfCounts.get(id) || 0) + 1)
+  // Identity key used everywhere below so a function identity (name+url+line)
+  // never gets double-counted across multiple profiler nodes that happen to
+  // share the same callFrame. V8 creates a separate tree node per distinct
+  // call site, so a recursive function like updateFiberRecursively can appear
+  // as many nodes with identical callFrames. Without identity-based dedup the
+  // same function is counted once per node per sample stack, which inflates
+  // %Total far above 100%.
+  const identityOf = (node: ProfileNode): string => {
+    const { functionName, url, lineNumber } = node.callFrame
+    return `${functionName}|${url}|${lineNumber}`
   }
 
-  // Count total-time (inclusive) samples per node.
-  // For each sample, walk from the sampled node up to root,
-  // counting each ancestor once per sample.
-  const totalCounts = new Map<number, number>()
+  // Self-time per identity. Each sample contributes to exactly one leaf node,
+  // so summing by identity can never exceed sampleCount.
+  const selfByIdentity = new Map<string, number>()
   for (const id of profile.samples) {
-    const visited = new Set<number>()
+    const node = nodes.get(id)
+    if (!node) continue
+    const key = identityOf(node)
+    selfByIdentity.set(key, (selfByIdentity.get(key) || 0) + 1)
+  }
+
+  // Total-time (inclusive) per identity. For each sample, walk from the
+  // sampled leaf up to root and increment an identity at most ONCE per
+  // sample — so a function that appears on every active sample's stack tops
+  // out at exactly nonIdleSamples, giving %Total <= 100%.
+  const totalByIdentity = new Map<string, number>()
+  for (const id of profile.samples) {
+    const visitedNodes = new Set<number>()          // break node-level cycles
+    const visitedIdentities = new Set<string>()     // per-sample identity dedup
     let current: number | undefined = id
     while (current !== undefined) {
-      if (visited.has(current)) break
-      visited.add(current)
-      totalCounts.set(current, (totalCounts.get(current) || 0) + 1)
+      if (visitedNodes.has(current)) break
+      visitedNodes.add(current)
+      const node = nodes.get(current)
+      if (node) {
+        const key = identityOf(node)
+        if (!visitedIdentities.has(key)) {
+          visitedIdentities.add(key)
+          totalByIdentity.set(key, (totalByIdentity.get(key) || 0) + 1)
+        }
+      }
       current = parentMap.get(current)
     }
   }
 
   const sampleCount = profile.samples.length
-  const nonIdleSamples = [...selfCounts.entries()]
-    .filter(([id]) => {
-      const node = nodes.get(id)
-      return node ? !IDLE_NAMES.has(node.callFrame.functionName) : false
-    })
-    .reduce((sum, [, count]) => sum + count, 0)
-
-  // Aggregate by function identity (name + url + line).
-  // Collect both self and total counts from all nodes with the same identity.
-  const fnMap = new Map<string, FunctionStat>()
-  for (const node of profile.nodes) {
-    const { functionName, url, lineNumber } = node.callFrame
-    if (IDLE_NAMES.has(functionName)) continue
-    const self = selfCounts.get(node.id) || 0
-    const total = totalCounts.get(node.id) || 0
-    if (self === 0 && total === 0) continue
-
-    const key = `${functionName}|${url}|${lineNumber}`
-    const existing = fnMap.get(key)
-    if (existing) {
-      existing.selfSamples += self
-      existing.totalSamples += total
-    } else {
-      fnMap.set(key, {
-        functionName: functionName || '(anonymous)',
-        url,
-        lineNumber,
-        selfSamples: self,
-        selfPercent: 0,
-        activePercent: 0,
-        totalSamples: total,
-        totalPercent: 0,
-        totalActivePercent: 0,
-      })
+  let nonIdleSamples = 0
+  for (const id of profile.samples) {
+    const node = nodes.get(id)
+    if (node && !IDLE_NAMES.has(node.callFrame.functionName)) {
+      nonIdleSamples++
     }
+  }
+
+  // Aggregate FunctionStat entries directly from the per-identity maps.
+  const fnMap = new Map<string, FunctionStat>()
+  const allKeys = new Set<string>([...selfByIdentity.keys(), ...totalByIdentity.keys()])
+  for (const key of allKeys) {
+    const [functionName, url, lineStr] = key.split('|')
+    if (IDLE_NAMES.has(functionName ?? '')) continue
+    const self = selfByIdentity.get(key) || 0
+    const total = totalByIdentity.get(key) || 0
+    if (self === 0 && total === 0) continue
+    fnMap.set(key, {
+      functionName: functionName || '(anonymous)',
+      url: url ?? '',
+      lineNumber: Number(lineStr ?? -1),
+      selfSamples: self,
+      selfPercent: 0,
+      activePercent: 0,
+      totalSamples: total,
+      totalPercent: 0,
+      totalActivePercent: 0,
+    })
   }
 
   // Compute percentages, sort by self-time by default
