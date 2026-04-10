@@ -160,7 +160,15 @@ You can also record CPU profiles from Chrome DevTools (Performance tab → Recor
 
 You can drive Chrome's V8 CPU profiler over CDP from the shell using [playwriter](https://playwriter.dev), which makes it scriptable and agent-friendly. playwriter has no dedicated profiling docs or helpers — it simply forwards raw CDP `Profiler.*` commands — so the steps below are the canonical workflow.
 
-#### 1. Install playwriter and read the skill
+#### 1. Install the playwriter Chrome extension
+
+playwriter talks to Chrome through a browser extension that you need to install from the Chrome Web Store. Without it, the CLI cannot connect to any tab.
+
+[**Install Playwriter MCP from the Chrome Web Store**](https://chromewebstore.google.com/detail/playwriter-mcp/jfeammnjpkecdekppnclgkkffahnhfhe)
+
+After installing, pin the extension and click its icon on the tab you want playwriter to control — or launch Chrome with `--allowlisted-extension-id=jfeammnjpkecdekppnclgkkffahnhfhe --auto-accept-this-tab-capture` to skip the per-tab approval. See the playwriter skill for the full Chrome flags per OS.
+
+#### 2. Install the playwriter CLI and read the skill
 
 ```bash
 npm install -g playwriter@latest
@@ -169,7 +177,7 @@ playwriter skill
 
 Read the full skill output before continuing — it covers session isolation, the sandboxed filesystem, and the `getCDPSession` helper.
 
-#### 2. Start a playwriter session from your project root
+#### 3. Start a playwriter session from your project root
 
 Run `playwriter session new` from the directory you want your profiles written to. The session sandbox captures that directory at creation time and only allows writes inside it (plus `/tmp` and `os.tmpdir()`).
 
@@ -178,7 +186,7 @@ playwriter session new
 # Session 1 created. Use with: playwriter -s 1 -e "..."
 ```
 
-#### 3. Open a new page
+#### 4. Open a new page
 
 ```bash
 playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("http://localhost:3000", { waitUntil: "domcontentloaded" })'
@@ -186,7 +194,7 @@ playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto(
 
 Replace the URL with your dev server or any page you want to profile.
 
-#### 4. Start the V8 profiler
+#### 5. Start the V8 profiler
 
 Attach a CDP session via playwriter's `getCDPSession` helper (do **not** use `page.context().newCDPSession()` — it does not work through the playwriter relay), then enable and start the profiler.
 
@@ -203,7 +211,7 @@ EOF
 )"
 ```
 
-#### 5. Interact with the page
+#### 6. Interact with the page
 
 Do whatever triggers the code path you want to profile — click a button, scroll, navigate, type into a form. Only the work that happens between `Profiler.start` and `Profiler.stop` ends up in the profile.
 
@@ -211,7 +219,7 @@ Do whatever triggers the code path you want to profile — click a button, scrol
 playwriter -s 1 -e 'await state.page.locator("button").first().click(); await state.page.waitForTimeout(2000)'
 ```
 
-#### 6. Stop the profiler and save the .cpuprofile
+#### 7. Stop the profiler and save the .cpuprofile
 
 ```bash
 playwriter -s 1 -e "$(cat <<'EOF'
@@ -226,9 +234,9 @@ EOF
 )"
 ```
 
-The relative `./tmp/cpu-profiles/` path works because the session was created from your project root in step 2.
+The relative `./tmp/cpu-profiles/` path works because the session was created from your project root in step 3.
 
-#### 7. Analyze with profano
+#### 8. Analyze with profano
 
 ```bash
 # hot leaves (default)
