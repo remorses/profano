@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.0.4
+
+1. **Fixed multi-file analysis** — passing multiple `.cpuprofile` files as positional args previously showed a table for only the FIRST file, silently ignoring the rest. Cause: the command signature was `<files...>`, which goke parsed as a single required arg named `files...` (literal, trailing dots) instead of a variadic arg, because goke's variadic parser specifically looks for `...` at the **start** of the bracket content (`[...files]`), not the end. Switched the signature to `[...files]` so `profano a.cpuprofile b.cpuprofile c.cpuprofile` now renders all three tables with the `━━━` header separator between them.
+
+   ```bash
+   # Now actually analyzes both files instead of silently dropping the second
+   profano tmp/cpu-profiles/*.cpuprofile
+   ```
+
+2. **Rewrote `--help` output per the goke skill** — the command description is now a multi-paragraph block explaining inputs, what the tool does, and when to use `--sort self` vs `--sort total`. Option descriptions are more specific. The `(default: …)` text is no longer duplicated (goke appends it automatically from the Zod schema).
+
+3. **Removed dead type-assertion workarounds** — the old code had `Array.isArray(files) ? files : [files]` and `options.sort as SortMode` as band-aids for the broken variadic. Both are gone now that the command signature is correct and option types are inferred from schemas.
+
+4. **Added `vitest.config.ts`** scoped to `src/**/*.test.ts` so the published `dist/parse.test.js` isn't picked up as an extra test run.
+
 ## 0.0.3
 
 1. **Fixed `%Total` exceeding 100%** — on real profiles with recursive functions (React reconciler, fiber tree walks, deeply nested calls), `%Total` could show nonsense values like `462.3%` because the same function identity was counted once per profiler tree node per sample instead of once per sample. V8's cpuprofile creates a separate tree node per distinct call site, so a function like `updateFiberRecursively` appears as multiple nodes with identical `callFrame` — profano now dedupes by function identity during the stack walk so every identity contributes at most 1 to the total count per sample. The invariant `%Total <= 100%` is now enforced by tests.
