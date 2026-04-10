@@ -66,15 +66,31 @@ Start with `--sort self` to find CPU-bound leaves (hot inner functions). Switch 
 
 ### Node.js
 
-Node has a built-in CPU profiler. Pass `--cpu-prof` when running a script and it writes a `.cpuprofile` file on exit:
+Node has a built-in CPU profiler. Pass `--cpu-prof` when running a script and it writes a `.cpuprofile` file to the `--cpu-prof-dir` directory on exit:
 
 ```bash
 node --cpu-prof --cpu-prof-dir=./tmp/cpu-profiles ./script.js
+profano ./tmp/cpu-profiles/CPU.*.cpuprofile
 ```
+
+Node writes the profile on **normal process exit**. You do not need a custom signal handler — Node flushes the profile automatically when the process exits on `SIGINT` (`Ctrl+C`) or `SIGTERM` (`kill <pid>`). `SIGKILL` (`kill -9`) skips the flush because the kernel terminates the process before Node gets a chance to run, so never use `kill -9` on a process you want to profile.
+
+### NODE_OPTIONS for wrappers (pnpm, vite, tsx, next, …)
+
+Anything that ultimately spawns `node` respects the `NODE_OPTIONS` env var. Use it when you cannot pass `--cpu-prof` directly to `node` — for example `pnpm dev`, `vite`, `tsx`, `next dev`, `nest start`, a package.json script, or a CI step:
+
+```bash
+NODE_OPTIONS="--cpu-prof --cpu-prof-dir=./tmp/cpu-profiles" pnpm dev
+# reproduce the slow path...
+# then Ctrl+C
+profano ./tmp/cpu-profiles/CPU.*.cpuprofile
+```
+
+This also works for `vite`, `vite build`, `tsx script.ts`, `next dev`, `nest start`, etc. Every child `node` process inherits `NODE_OPTIONS`, so if the wrapper spawns multiple Node workers each one gets its own `CPU.<timestamp>.<pid>.*.cpuprofile`. Pass them all to profano at once — it renders a separate table per file with a header separator so you can tell which worker was hot.
 
 ### Vitest
 
-Enable CPU profiling conditionally via an env var so you can opt in per-run. Wire Node's `--cpu-prof` flag into the pool worker's `execArgv` in `vitest.config.ts`:
+Vitest's official CPU profiling pattern uses the top-level `test.execArgv` option together with `test.fileParallelism: false` so profiles are not interleaved across files. This is pool-agnostic (`forks` or `threads`) — `--cpu-prof` works in both. Wire it behind an env var so you can opt in per-run:
 
 ```ts
 // vitest.config.ts
@@ -84,17 +100,12 @@ const cpuProf = process.env.VITEST_CPU_PROF === '1'
 
 export default defineConfig({
   test: {
-    pool: 'forks',
-    poolOptions: {
-      forks: {
-        // Run one fork at a time when profiling so the output is
-        // manageable and the machine does not hang under load.
-        maxForks: cpuProf ? 1 : undefined,
-        execArgv: cpuProf
-          ? ['--cpu-prof', '--cpu-prof-dir=tmp/cpu-profiles']
-          : [],
-      },
-    },
+    // Serialize test files so profiles are not interleaved.
+    // This is the officially documented way to profile Vitest.
+    fileParallelism: cpuProf ? false : undefined,
+    execArgv: cpuProf
+      ? ['--cpu-prof', '--cpu-prof-dir=tmp/cpu-profiles']
+      : [],
   },
 })
 ```
@@ -106,44 +117,40 @@ VITEST_CPU_PROF=1 pnpm test --run src/some-file.test.ts
 profano tmp/cpu-profiles/CPU.*.cpuprofile
 ```
 
-Always profile one file at a time. Running the whole suite with profiling enabled generates dozens of overlapping `.cpuprofile` files and can overload the machine.
+Profile one file at a time — running the whole suite with profiling enabled generates dozens of overlapping `.cpuprofile` files and can overload the machine.
 
-### Dev servers and long-running scripts
+> Note: the `--prof` flag does **not** work with `pool: 'threads'` due to `node:worker_threads` limitations. `--cpu-prof` is the right choice for profiling Vitest and works with both pools.
 
-Node's `--cpu-prof` flag writes the `.cpuprofile` on **normal process exit**. You don't need a custom signal handler — Node flushes the profile automatically when the process exits on `SIGINT` (`Ctrl+C`) or `SIGTERM` (`kill <pid>`), as long as nothing upstream sends `SIGKILL` (`kill -9`).
-
-This means you can profile a dev server exactly like a normal script: start it with `--cpu-prof`, reproduce the slow path, then stop it with `Ctrl+C` or `kill <pid>`. The profile lands in the `--cpu-prof-dir` directory.
-
-**Plain Node dev server:**
+**Profiling the Vitest main thread.** The `execArgv` above profiles the test workers, not the Vitest main process itself (where Vite plugin transforms and `globalSetup` run). To profile the main thread, invoke Vitest's entry file under `node --cpu-prof` directly:
 
 ```bash
-node --cpu-prof --cpu-prof-dir=./tmp/cpu-profiles ./server.js
-# reproduce the slow path...
-# then Ctrl+C (or `kill <pid>` from another terminal)
+node --cpu-prof --cpu-prof-dir=./tmp/main-profile ./node_modules/vitest/vitest.mjs --run
+profano ./tmp/main-profile/CPU.*.cpuprofile
+```
+
+Use this when transform/setup time is high and worker-level profiling shows the hot path is outside test execution.
+
+### Bun
+
+Bun has a built-in V8-compatible CPU profiler with the same `--cpu-prof` flag as Node:
+
+```bash
+bun --cpu-prof --cpu-prof-dir=./tmp/cpu-profiles ./script.ts
 profano ./tmp/cpu-profiles/CPU.*.cpuprofile
 ```
 
-**`pnpm dev` (or any script that spawns Node):**
-
-Use `NODE_OPTIONS` so every Node process spawned by the script inherits the flag:
+For wrappers that spawn `bun` (scripts, watchers, bundlers), use the `BUN_OPTIONS` env var — same idea as `NODE_OPTIONS` for Node:
 
 ```bash
-NODE_OPTIONS="--cpu-prof --cpu-prof-dir=./tmp/cpu-profiles" pnpm dev
+BUN_OPTIONS="--cpu-prof --cpu-prof-dir=./tmp/cpu-profiles" bun run dev
 # reproduce the slow path...
 # then Ctrl+C
 profano ./tmp/cpu-profiles/CPU.*.cpuprofile
 ```
 
-If `pnpm dev` spawns multiple Node workers (Next.js, Vite, Nest, etc.), each one gets its own `CPU.<timestamp>.<pid>.*.cpuprofile`. Pass them all to profano at once — profano will render a separate table per file with a header separator so you can tell which worker was hot.
+Same signal rules apply as with Node: the profile is written on clean exit, `Ctrl+C` and `kill <pid>` (`SIGTERM`) both work, `kill -9` does not.
 
-To stop the process cleanly from another terminal, send `SIGTERM` (not `SIGKILL`):
-
-```bash
-kill <pid>        # sends SIGTERM, profile gets written
-kill -TERM <pid>  # same thing, explicit
-# NEVER use:
-kill -9 <pid>     # SIGKILL, kernel kills the process before Node can flush
-```
+Bun also supports `--cpu-prof-name <filename>` for a fixed output name and `--cpu-prof-interval <microseconds>` to change the sampling rate (default 1000μs).
 
 ### Chrome DevTools
 
