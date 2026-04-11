@@ -73,7 +73,7 @@ Use --sort self to find CPU-bound leaves (hot inner functions) and --sort total 
       const profile = loadProfile(filePath)
       const result = analyze(profile)
       console.log(
-        formatTable({ ...result, limit: options.limit ?? 30, sort: options.sort }),
+        formatTable({ ...result, limit: options.limit, sort: options.sort }),
       )
     }
   })
