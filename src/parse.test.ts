@@ -222,6 +222,53 @@ describe('analyze', () => {
     expect(bar!.totalActivePercent).toBe(100)
   })
 
+  it('computes selfMs and totalMs from timeDeltas', () => {
+    // Stack: root -> foo -> bar (leaf)
+    // timeDeltas: [500, 1000, 2000] µs
+    // bar is the leaf for all 3 samples → selfMs = (500+1000+2000)/1000 = 3.5ms
+    // foo is on the stack for all 3 samples → totalMs = 3.5ms, selfMs = 0
+    const profile: CpuProfile = {
+      nodes: [
+        { id: 1, callFrame: frame({ functionName: '(root)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [2] },
+        { id: 2, callFrame: frame({ functionName: 'foo', lineNumber: 1 }), children: [3] },
+        { id: 3, callFrame: frame({ functionName: 'bar', lineNumber: 2 }) },
+      ],
+      samples: [3, 3, 3],
+      startTime: 0,
+      endTime: 3500,
+      timeDeltas: [500, 1000, 2000],
+    }
+    const { functions } = analyze(profile)
+
+    const bar = functions.find(f => f.functionName === 'bar')
+    expect(bar).toBeDefined()
+    expect(bar!.selfMs).toBeCloseTo(3.5, 5)
+    expect(bar!.totalMs).toBeCloseTo(3.5, 5)
+
+    const foo = functions.find(f => f.functionName === 'foo')
+    expect(foo).toBeDefined()
+    expect(foo!.selfMs).toBe(0)
+    expect(foo!.totalMs).toBeCloseTo(3.5, 5)
+  })
+
+  it('falls back to average delta when timeDeltas is missing', () => {
+    const profile: CpuProfile = {
+      nodes: [
+        { id: 1, callFrame: frame({ functionName: '(root)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [2] },
+        { id: 2, callFrame: frame({ functionName: 'work' }) },
+      ],
+      samples: [2, 2, 2, 2],
+      startTime: 0,
+      endTime: 4000, // 4000µs total, 4 samples → avg 1000µs each
+    }
+    const { functions } = analyze(profile)
+    const work = functions.find(f => f.functionName === 'work')
+    expect(work).toBeDefined()
+    // 4 samples × 1000µs avg = 4000µs = 4ms
+    expect(work!.selfMs).toBeCloseTo(4, 5)
+    expect(work!.totalMs).toBeCloseTo(4, 5)
+  })
+
   it('handles an empty samples array without crashing', () => {
     const profile: CpuProfile = {
       nodes: [

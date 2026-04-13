@@ -56,10 +56,14 @@ export interface FunctionStat {
   selfPercent: number
   /** Percent of non-idle active samples (self) */
   activePercent: number
+  /** Self-time in milliseconds, computed from timeDeltas */
+  selfMs: number
   totalSamples: number
   totalPercent: number
   /** Percent of non-idle active samples (total/inclusive) */
   totalActivePercent: number
+  /** Total (inclusive) time in milliseconds, computed from timeDeltas */
+  totalMs: number
 }
 
 const IDLE_NAMES = new Set(['(idle)', '(garbage collector)', '(program)', '(root)'])
@@ -120,13 +124,30 @@ export function analyze(profile: CpuProfile): {
     }
   }
 
+  // Pre-compute per-sample time in microseconds from timeDeltas.
+  // timeDeltas[i] is the time between sample i-1 and sample i (in µs).
+  // For the first sample we use timeDeltas[0] if available, otherwise
+  // fall back to the average delta across all samples.
+  const deltas = profile.timeDeltas
+  const totalDurationUs = profile.endTime - profile.startTime
+  const avgDeltaUs = profile.samples.length > 0
+    ? totalDurationUs / profile.samples.length
+    : 0
+  function sampleDeltaUs(i: number): number {
+    if (deltas && i < deltas.length) return deltas[i]!
+    return avgDeltaUs
+  }
+
   // Self-time per identity. Each sample contributes to exactly one leaf node
   // so summing by identity can never exceed sampleCount.
   const selfByIdentity = new Map<string, number>()
-  for (const id of profile.samples) {
+  const selfUsByIdentity = new Map<string, number>()
+  for (let i = 0; i < profile.samples.length; i++) {
+    const id = profile.samples[i]!
     const entry = identityByNodeId.get(id)
     if (!entry) continue
     selfByIdentity.set(entry.key, (selfByIdentity.get(entry.key) || 0) + 1)
+    selfUsByIdentity.set(entry.key, (selfUsByIdentity.get(entry.key) || 0) + sampleDeltaUs(i))
   }
 
   // Total-time (inclusive) per identity. For each sample, walk from the
@@ -134,7 +155,10 @@ export function analyze(profile: CpuProfile): {
   // sample — so a function that appears on every active sample's stack tops
   // out at exactly nonIdleSamples, giving %Total <= 100%.
   const totalByIdentity = new Map<string, number>()
-  for (const id of profile.samples) {
+  const totalUsByIdentity = new Map<string, number>()
+  for (let i = 0; i < profile.samples.length; i++) {
+    const id = profile.samples[i]!
+    const deltaUs = sampleDeltaUs(i)
     const visitedNodes = new Set<number>()          // defensive — break node-level cycles
     const visitedIdentities = new Set<string>()     // per-sample identity dedup
     let current: number | undefined = id
@@ -145,6 +169,7 @@ export function analyze(profile: CpuProfile): {
       if (entry && !visitedIdentities.has(entry.key)) {
         visitedIdentities.add(entry.key)
         totalByIdentity.set(entry.key, (totalByIdentity.get(entry.key) || 0) + 1)
+        totalUsByIdentity.set(entry.key, (totalUsByIdentity.get(entry.key) || 0) + deltaUs)
       }
       current = parentMap.get(current)
     }
@@ -182,13 +207,15 @@ export function analyze(profile: CpuProfile): {
       selfSamples: self,
       selfPercent: sampleCount > 0 ? (self / sampleCount) * 100 : 0,
       activePercent: nonIdleSamples > 0 ? (self / nonIdleSamples) * 100 : 0,
+      selfMs: (selfUsByIdentity.get(key) || 0) / 1000,
       totalSamples: total,
       totalPercent: sampleCount > 0 ? (total / sampleCount) * 100 : 0,
       totalActivePercent: nonIdleSamples > 0 ? (total / nonIdleSamples) * 100 : 0,
+      totalMs: (totalUsByIdentity.get(key) || 0) / 1000,
     })
   }
 
-  functions.sort((a, b) => b.selfSamples - a.selfSamples)
+  functions.sort((a, b) => (b.selfMs - a.selfMs) || (b.selfSamples - a.selfSamples))
 
   const durationSeconds = (profile.endTime - profile.startTime) / 1e6
 
