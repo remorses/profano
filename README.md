@@ -48,14 +48,14 @@ Duration: 12.34s
 Samples:  11542 active / 12340 total (6.4% idle)
 Sort:     self
 
-   Self  %Self    Total  %Total  Function                                    Location
-───────  ──────  ───────  ──────  ──────────────────────────────────────────  ────────────────────────────────
-   3402   29.5%    6804   58.9%  parseAsync                                  src/parser.ts:142
+   Self  %Self   Self ms    Total  %Total  Total ms  Function                                    Location
+───────  ──────  ───────  ───────  ──────  ────────  ──────────────────────────────────────────  ────────────────────────────────
+   3402   29.5%    3.40s     6804   58.9%     6.80s  parseAsync                                  src/parser.ts:142
    ...
 ```
 
-- **Self** — samples where the function was at the top of the stack (exclusive time).
-- **Total** — samples where the function appeared anywhere in the stack (inclusive time).
+- **Self / Self ms** — samples and time where the function was at the top of the stack (exclusive time).
+- **Total / Total ms** — samples and time where the function appeared anywhere in the stack (inclusive time).
 - **%Self / %Total** — percent of **non-idle** active samples, so you can see real hotspots even if the profile is mostly idle.
 
 Idle, GC, and VM pseudo-frames (`(idle)`, `(garbage collector)`, `(program)`, `(root)`) are excluded from the function list so they don't drown out real code.
@@ -252,6 +252,134 @@ profano ./tmp/cpu-profiles/browser-*.cpuprofile --sort total -n 20
 - **Use `getCDPSession({ page })`** — not `page.context().newCDPSession()`. Only the playwriter helper is routed through the relay.
 - **Sampling interval is in microseconds** — `Profiler.setSamplingInterval({ interval })` takes microseconds, not milliseconds. 1000 = 1ms (the default). Drop to 100 for high-resolution micro-profiling, raise to 10000 for long runs where you want a smaller file.
 - **Extension overhead shows up in the profile** — CDP's V8 profiler sees every script running in the page's main world, including scripts injected by browser extensions like React DevTools. Profile in an incognito window with extensions disabled to see only your own code.
+
+### React component renders via playwriter
+
+React 19.2+ exposes React Performance Track entries in development and profiling builds. In development builds, many component render entries are observable as `PerformanceMeasure` objects with React-specific `detail` metadata. The observer below captures that measure-based subset — it does not reproduce every entry React shows in DevTools (some use `console.timeStamp` instead).
+
+**Requirements:** React 19.2+ in development or profiling build. Production builds don't emit measures. Requires playwriter to control the browser. In profiling builds, components must be wrapped in `<Profiler>` or React DevTools extension must be installed for full coverage.
+
+#### 1. Install the observer on the page
+
+Create a playwriter session and navigate to your React app, then install the observer (replace `-s 1` with your session ID):
+
+```bash
+playwriter session new  # note the session ID
+```
+
+```bash
+playwriter -s 1 -e "$(cat <<'EOF'
+await state.page.evaluate(() => {
+  window.__reactMeasures = []
+  const observer = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      if (!entry.detail?.devtools?.track) continue
+      window.__reactMeasures.push({
+        name: entry.name,
+        duration: entry.duration,
+        startTime: entry.startTime,
+        track: entry.detail.devtools.track,
+      })
+    }
+  })
+  observer.observe({ type: 'measure', buffered: true })
+})
+console.log('Observer installed')
+EOF
+)"
+```
+
+React sets `detail.devtools.track` on every measure it emits. The filter `entry.detail?.devtools?.track` keeps only React data and excludes unrelated measures from other libraries. A `PerformanceObserver` is required because `performance.getEntriesByType('measure')` may miss entries that React clears.
+
+#### 2. Interact with the app
+
+Click around, navigate, toggle themes, type — any React state change triggers component renders that get captured by the observer.
+
+#### 3. Collect and save as `.cpuprofile`
+
+```bash
+playwriter -s 1 -e "$(cat <<'EOF'
+const measures = await state.page.evaluate(() => window.__reactMeasures)
+if (!measures.length) { console.log('No React measures captured'); return }
+
+const TICK = 100
+const nodes = [
+  { id: 1, callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 }, children: [2] },
+  { id: 2, callFrame: { functionName: '(idle)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 }, children: [] },
+]
+
+const nameToId = new Map()
+let nextId = 3
+for (const m of measures) {
+  const name = m.name.replace('\u200b', '')
+  const key = m.track + '::' + name
+  if (!nameToId.has(key)) {
+    const id = nextId++
+    nameToId.set(key, id)
+    nodes.push({ id, callFrame: { functionName: name, scriptId: String(id), url: m.track, lineNumber: -1, columnNumber: -1 }, children: [] })
+    nodes[0].children.push(id)
+  }
+}
+
+const sorted = [...measures].sort((a, b) => a.startTime - b.startTime)
+const t0 = sorted[0].startTime
+const endUs = Math.round((Math.max(...sorted.map(m => m.startTime + m.duration)) - t0) * 1000)
+
+const events = sorted.map(m => ({
+  startUs: Math.round((m.startTime - t0) * 1000),
+  endUs: Math.round((m.startTime + m.duration - t0) * 1000),
+  nodeId: nameToId.get(m.track + '::' + m.name.replace('\u200b', '')),
+}))
+
+const samples = []
+const timeDeltas = []
+for (let t = 0; t < endUs; t += TICK) {
+  let node = 2
+  for (const ev of events) {
+    if (t >= ev.startUs && t < ev.endUs) node = ev.nodeId
+  }
+  samples.push(node)
+  timeDeltas.push(TICK)
+}
+
+const fs = require('node:fs')
+const path = './react-profile.cpuprofile'
+fs.writeFileSync(path, JSON.stringify({ nodes, samples, startTime: 0, endTime: endUs, timeDeltas }))
+console.log('Saved', path, '— Nodes:', nodes.length, 'Samples:', samples.length)
+EOF
+)"
+```
+
+#### 4. Analyze with profano
+
+```bash
+npx profano react-profile.cpuprofile --sort self
+```
+
+Always use `--sort self` — the flat export makes self-time the meaningful metric.
+
+Example output:
+
+```
+Duration: 47.23s
+Samples:  786 active / 472317 total (99.8% idle)
+Sort:     self
+
+   Self  %Self   Self ms    Total  %Total  Total ms  Function                Location
+───────  ──────  ───────  ───────  ──────  ────────  ──────────────────────  ──────────────
+    258   32.8%   25.8ms      258   32.8%    25.8ms  Mount                   Components ⚛
+     87   11.1%    8.7ms       87   11.1%     8.7ms  EditorialPage           Components ⚛
+     73    9.3%    7.3ms       73    9.3%     7.3ms  Update Blocked          Transition
+     62    7.9%    6.2ms       62    7.9%     6.2ms  Cascading Update        Blocking
+     41    5.2%    4.1ms       41    5.2%     4.1ms  SidebarTreeProvider     Components ⚛
+     41    5.2%    4.1ms       41    5.2%     4.1ms  ExpandableContainer     Components ⚛
+```
+
+The Location column shows the React track: `Components ⚛` for component renders, `Transition`/`Blocking`/`Idle` for scheduler events. Scheduler events like `Mount`, `Cascading Update`, and `Update Blocked` tell you why renders happened — cascading updates are a common perf smell.
+
+#### How the React conversion works
+
+React 19.2 calls `performance.measure(componentName, { detail: { devtools: { track: 'Components ⚛', ... } } })` for component renders in development builds. It prefixes component names with a zero-width space (`\u200b`). The conversion creates a flat `.cpuprofile` where each unique component/event becomes a node under root, and samples are filled proportionally to each measure's duration. This is an approximate exclusive-time view — overlapping parent/child spans are collapsed, so `--sort self` is the useful view. It does not preserve the nested flamegraph structure that React DevTools shows.
 
 ### Programmatic inspector
 
