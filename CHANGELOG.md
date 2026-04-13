@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.0
+
+1. **New `Self ms` and `Total ms` columns** — the table now shows real millisecond timings for every function, computed by summing `timeDeltas` from the `.cpuprofile` file. No more guessing from sample counts:
+
+   ```
+      Self  %Self   Self ms    Total  %Total  Total ms  Function              Location
+   ───────  ──────  ───────  ───────  ──────  ────────  ────────────────────  ────────────
+        10    6.0%   10.6ms       10    6.0%    10.6ms  measureHostInstance   installHook.js:0
+        28   16.9%   0.70ms       31   18.7%     3.1ms  commitMutation...     react-dom_client.js:7234
+   ```
+
+   When `timeDeltas` is missing from the profile, falls back to `(endTime - startTime) / samples.length` as the average delta per sample.
+
+2. **Sorting now uses milliseconds, not sample counts** — `--sort self` and `--sort total` rank by actual time. This fixes incorrect rankings when sampling intervals are non-uniform (e.g. a function with 10 samples at 10.6ms now correctly ranks above one with 28 samples at 0.70ms). Sample count is used as tiebreaker.
+
+3. **React component profiling workflow** — the profano skill (`skills/profano/SKILL.md`) now documents how to profile React 19.2+ component renders in the browser using playwriter + `PerformanceObserver`, convert the data to `.cpuprofile`, and analyze with profano to find the slowest components.
+
 ## 0.0.5
 
 1. **Fixed two function-identity bugs** — the identity used to group profile samples into one row per function was too weak, so different functions were silently merged into a single row on real profiles. Both issues were flagged by an oracle code review against Chrome DevTools and speedscope's own identity rules.
