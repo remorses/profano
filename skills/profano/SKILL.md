@@ -137,14 +137,14 @@ Duration: 47.23s
 Samples:  786 active / 472317 total (99.8% idle)
 Sort:     self
 
-   Self  %Self    Total  %Total  Function                Location
-───────  ──────  ───────  ──────  ──────────────────────  ──────────────
-    258   32.8%      258   32.8%  Mount                   Components ⚛
-     87   11.1%       87   11.1%  EditorialPage           Components ⚛
-     73    9.3%       73    9.3%  Update Blocked          Transition
-     62    7.9%       62    7.9%  Cascading Update        Blocking
-     41    5.2%       41    5.2%  SidebarTreeProvider     Components ⚛
-     41    5.2%       41    5.2%  ExpandableContainer     Components ⚛
+   Self  %Self   Self ms    Total  %Total  Total ms  Function                Location
+───────  ──────  ───────  ───────  ──────  ────────  ──────────────────────  ──────────────
+    258   32.8%   25.8ms      258   32.8%    25.8ms  Mount                   Components ⚛
+     87   11.1%    8.7ms       87   11.1%     8.7ms  EditorialPage           Components ⚛
+     73    9.3%    7.3ms       73    9.3%     7.3ms  Update Blocked          Transition
+     62    7.9%    6.2ms       62    7.9%     6.2ms  Cascading Update        Blocking
+     41    5.2%    4.1ms       41    5.2%     4.1ms  SidebarTreeProvider     Components ⚛
+     41    5.2%    4.1ms       41    5.2%     4.1ms  ExpandableContainer     Components ⚛
 ```
 
 The Location column shows the React track: `Components ⚛` for component renders, `Transition`/`Blocking`/`Idle` for scheduler events. Scheduler events like `Mount`, `Cascading Update`, and `Update Blocked` tell you why renders happened — cascading updates are a common perf smell.
