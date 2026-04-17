@@ -403,13 +403,13 @@ describe('formatTree', () => {
       Samples:  10 active / 10 total (0.0% idle)
 
       [100.0% 10.00s] (all)
-      └── [100.0% 10.00s] main  src/index.ts:1
-          ├── [ 70.0% 7.00s] handleRequest  src/server.ts:10
-          │   ├── [ 50.0% 5.00s] dbQuery  src/db.ts:20
-          │   │   └── [ 50.0% 5.00s] pgExecute  node_modules/pg/client.ts:89
-          │   └── [ 20.0% 2.00s] serialize  src/format.ts:30
-          └── [ 30.0% 3.00s] authCheck  src/auth.ts:40
-              └── [ 30.0% 3.00s] cryptoVerify"
+      └[100.0% 10.00s] main src/index.ts:1
+       ├[ 70.0% 7.00s] handleRequest src/server.ts:10
+       │├[ 50.0% 5.00s] dbQuery src/db.ts:20
+       ││└[ 50.0% 5.00s] pgExecute node_modules/pg/client.ts:89
+       │└[ 20.0% 2.00s] serialize src/format.ts:30
+       └[ 30.0% 3.00s] authCheck src/auth.ts:40
+        └[ 30.0% 3.00s] cryptoVerify"
     `)
   })
 
@@ -421,12 +421,12 @@ describe('formatTree', () => {
       Samples:  10 active / 10 total (0.0% idle)
 
       [100.0% 10.00s] (all)
-      └── [100.0% 10.00s] main  src/index.ts:1
-          ├── [ 70.0% 7.00s] handleRequest  src/server.ts:10
-          │   └── [ 50.0% 5.00s] dbQuery  src/db.ts:20
-          │       └── [ 50.0% 5.00s] pgExecute  node_modules/pg/client.ts:89
-          └── [ 30.0% 3.00s] authCheck  src/auth.ts:40
-              └── [ 30.0% 3.00s] cryptoVerify"
+      └[100.0% 10.00s] main src/index.ts:1
+       ├[ 70.0% 7.00s] handleRequest src/server.ts:10
+       │└[ 50.0% 5.00s] dbQuery src/db.ts:20
+       │ └[ 50.0% 5.00s] pgExecute node_modules/pg/client.ts:89
+       └[ 30.0% 3.00s] authCheck src/auth.ts:40
+        └[ 30.0% 3.00s] cryptoVerify"
     `)
   })
 
@@ -438,9 +438,9 @@ describe('formatTree', () => {
       Samples:  10 active / 10 total (0.0% idle)
 
       [100.0% 10.00s] (all)
-      └── [100.0% 10.00s] main  src/index.ts:1
-          ├── [ 70.0% 7.00s] handleRequest  src/server.ts:10
-          └── [ 30.0% 3.00s] authCheck  src/auth.ts:40"
+      └[100.0% 10.00s] main src/index.ts:1
+       ├[ 70.0% 7.00s] handleRequest src/server.ts:10
+       └[ 30.0% 3.00s] authCheck src/auth.ts:40"
     `)
   })
 
@@ -451,10 +451,10 @@ describe('formatTree', () => {
       "Duration: 10.00s
       Samples:  10 active / 10 total (0.0% idle)
 
-      [ 70.0% 7.00s] handleRequest  src/server.ts:10
-      ├── [ 50.0% 5.00s] dbQuery  src/db.ts:20
-      │   └── [ 50.0% 5.00s] pgExecute  node_modules/pg/client.ts:89
-      └── [ 20.0% 2.00s] serialize  src/format.ts:30"
+      [ 70.0% 7.00s] handleRequest src/server.ts:10
+      ├[ 50.0% 5.00s] dbQuery src/db.ts:20
+      │└[ 50.0% 5.00s] pgExecute node_modules/pg/client.ts:89
+      └[ 20.0% 2.00s] serialize src/format.ts:30"
     `)
   })
 
@@ -472,12 +472,12 @@ describe('formatTree', () => {
       Samples:  10 active / 10 total (0.0% idle)
 
       [100.0% 10.00s] (all)
-      └── [100.0% 10.00s] main  src/index.ts:1
-          ├── [ 70.0% 7.00s] handleRequest  src/server.ts:10
-          │   ├── [ 50.0% 5.00s] dbQuery  src/db.ts:20
-          │   └── [ 20.0% 2.00s] serialize  src/format.ts:30
-          └── [ 30.0% 3.00s] authCheck  src/auth.ts:40
-              └── [ 30.0% 3.00s] cryptoVerify"
+      └[100.0% 10.00s] main src/index.ts:1
+       ├[ 70.0% 7.00s] handleRequest src/server.ts:10
+       │├[ 50.0% 5.00s] dbQuery src/db.ts:20
+       │└[ 20.0% 2.00s] serialize src/format.ts:30
+       └[ 30.0% 3.00s] authCheck src/auth.ts:40
+        └[ 30.0% 3.00s] cryptoVerify"
     `)
   })
 })
@@ -606,23 +606,23 @@ describe('real-world cpuprofile tree', () => {
       Samples:  2150 active / 2316 total (7.2% idle)
 
       [100.0% 2.33s] (all)
-      ├── [ 49.3% 1.15s] resolveConfig  nm/vite/dist/node/chunks/node.js:34002
-      │   └── [ 49.0% 1.14s] (anonymous)  nm/vite/dist/node/chunks/node.js:34311
-      │       └── [ 49.0% 1.14s] configResolved  dist/vite-plugin.js:134
-      │           └── [ 48.9% 1.14s] syncNavigation  lib/sync.js:74
-      ├── [ 18.0% 419.3ms] enrichPage  lib/sync.js:93
-      │   └── [ 11.3% 263.3ms] collectMdxIconRefs  lib/mdx-processor.js:43
-      │       ├── [  5.9% 137.2ms] normalizeMdx → parse [3.1%] → parser [3.1%] → write [1.3%] → main [1.2%] → go [1.2%] → flowContinue [0.8%] → writeToChild [0.7%] → write [0.7%] → main [0.7%] → go [0.7%] → inside [0.1%] → before [0.1%] → mdxExpressionParse [0.1%] → eventsToAcorn [0.1%] → parseExpressionAt [0.1%] → pp.nextToken [0.1%] → readToken [0.1%] → pp.getTokenFromCode [0.1%] → pp.readNumber [0.1%] → pp.fullCharCodeAtPos [0.1%]  mintlify/normalize-mdx.js:12
-      │       └── [  5.1% 118.9ms] mdxParse  nm/safe-mdx/dist/parse.js:8
-      │           └── [  5.1% 118.9ms] processSync  nm/unified/lib/index.js:808
-      ├── [ 16.3% 379.6ms] run  esm/module_job:418
-      │   └── [ 16.2% 377.0ms] evaluate
-      │       └── [  8.6% 199.6ms] (anonymous)  esm/translators:228
-      │           └── [  8.6% 199.6ms] loadCJSModuleWithModuleLoad  esm/translators:323
-      └── [ 13.9% 323.5ms] loadConfigFromBundledFile  nm/vite/dist/node/chunks/node.js:34562
-          └── [ 13.9% 323.5ms] importModuleDynamicallyCallback  esm/utils:251
-              └── [ 13.9% 323.5ms] defaultImportModuleDynamicallyForModule  esm/utils:222
-                  └── [ 13.9% 323.5ms] import  esm/loader:644"
+      ├[ 49.3% 1.15s] resolveConfig nm/vite/dist/node/chunks/node.js:34002
+      │└[ 49.0% 1.14s] (anonymous) nm/vite/dist/node/chunks/node.js:34311
+      │ └[ 49.0% 1.14s] configResolved dist/vite-plugin.js:134
+      │  └[ 48.9% 1.14s] syncNavigation lib/sync.js:74
+      ├[ 18.0% 419.3ms] enrichPage lib/sync.js:93
+      │└[ 11.3% 263.3ms] collectMdxIconRefs lib/mdx-processor.js:43
+      │ ├[  5.9% 137.2ms] normalizeMdx → parse [3.1%] → parser [3.1%] → write [1.3%] → main [1.2%] → go [1.2%] → flowContinue [0.8%] → writeToChild [0.7%] → write [0.7%] → main [0.7%] → go [0.7%] → inside [0.1%] → before [0.1%] → mdxExpressionParse [0.1%] → eventsToAcorn [0.1%] → parseExpressionAt [0.1%] → pp.nextToken [0.1%] → readToken [0.1%] → pp.getTokenFromCode [0.1%] → pp.readNumber [0.1%] → pp.fullCharCodeAtPos [0.1%] mintlify/normalize-mdx.js:12
+      │ └[  5.1% 118.9ms] mdxParse nm/safe-mdx/dist/parse.js:8
+      │  └[  5.1% 118.9ms] processSync nm/unified/lib/index.js:808
+      ├[ 16.3% 379.6ms] run esm/module_job:418
+      │└[ 16.2% 377.0ms] evaluate
+      │ └[  8.6% 199.6ms] (anonymous) esm/translators:228
+      │  └[  8.6% 199.6ms] loadCJSModuleWithModuleLoad esm/translators:323
+      └[ 13.9% 323.5ms] loadConfigFromBundledFile nm/vite/dist/node/chunks/node.js:34562
+       └[ 13.9% 323.5ms] importModuleDynamicallyCallback esm/utils:251
+        └[ 13.9% 323.5ms] defaultImportModuleDynamicallyForModule esm/utils:222
+         └[ 13.9% 323.5ms] import esm/loader:644"
     `)
   })
 
@@ -634,46 +634,46 @@ describe('real-world cpuprofile tree', () => {
       "Duration: 2.54s
       Samples:  2150 active / 2316 total (7.2% idle)
 
-      [ 18.0% 419.3ms] enrichPage  lib/sync.js:93
-      ├── [ 11.3% 263.3ms] collectMdxIconRefs  lib/mdx-processor.js:43
-      │   ├── [  5.9% 137.2ms] normalizeMdx  mintlify/normalize-mdx.js:12
-      │   │   ├── [  3.1% 72.5ms] parse  nm/unified/lib/index.js:662
-      │   │   ├── [  1.2% 28.9ms] toMarkdown  nm/mdast-util-to-markdown/lib/index.js:29
-      │   │   ├── [  1.2% 28.6ms] parser  nm/remark-parse/lib/index.js:31
-      │   │   ├── [  0.1% 2.5ms] runSync  nm/unified/lib/index.js:943
-      │   │   ├── [  0.1% 2.5ms] executor  nm/unified/lib/index.js:894
-      │   │   └── [  0.1% 2.2ms] apply  nm/unified/lib/callable-instance.js:22
-      │   ├── [  5.1% 118.9ms] mdxParse  nm/safe-mdx/dist/parse.js:8
-      │   │   └── [  5.1% 118.9ms] processSync  nm/unified/lib/index.js:808
-      │   └── [  0.3% 7.2ms] parsePageFrontmatter  lib/page-frontmatter.js:46
-      │       ├── [  0.3% 6.0ms] parseFrontmatterObject  lib/frontmatter.js:73
-      │       └── [  0.1% 1.3ms] inst.safeParse  nm/zod/v4/classic/schemas.js:39
-      ├── [  4.5% 105.9ms] processImage  lib/image-processor.js:47
-      │   ├── [  2.7% 62.3ms] processImageBuffer  lib/image-processor.js:53
-      │   │   ├── [  2.4% 55.3ms] importModuleDynamicallyCallback  esm/utils:251
-      │   │   └── [  0.3% 5.9ms] gitBlobSha  lib/image-processor.js:85
-      │   └── [  1.9% 43.5ms] readFileSync  node:fs:432
-      │       ├── [  1.6% 37.5ms] tryReadSync  node:fs:411
-      │       ├── [  0.2% 3.5ms] openSync  node:fs:558
-      │       └── [  0.1% 2.5ms] n  nm/graceful-fs/graceful-fs.js:1
-      ├── [  1.2% 28.1ms] rewriteMdxImages  lib/mdx-processor.js:131
-      │   ├── [  1.2% 26.9ms] toMarkdown  nm/mdast-util-to-markdown/lib/index.js:29
-      │   │   └── [  1.2% 26.9ms] one  nm/zwitch/index.js:94
-      │   └── [  0.1% 1.3ms] (anonymous)  lib/mdx-processor.js:133
-      │       └── [  0.1% 1.3ms] rewriteNode  lib/mdx-processor.js:148
-      ├── [  0.8% 18.3ms] copyToPublic  lib/sync.js:252
-      │   ├── [  0.4% 8.5ms] update  node:internal/crypto/hash:133
-      │   ├── [  0.2% 3.9ms] readFileSync  node:fs:432
-      │   │   ├── [  0.1% 1.3ms] openSync  node:fs:558
-      │   │   ├── [  0.1% 1.3ms] n  nm/graceful-fs/graceful-fs.js:1
-      │   │   └── [  0.1% 1.3ms] tryReadSync  node:fs:411
-      │   ├── [  0.1% 2.5ms] createHash  node:crypto:143
-      │   │   └── [  0.1% 2.5ms] Hash  node:internal/crypto/hash:89
-      │   ├── [  0.1% 1.3ms] extname  node:path:1550
-      │   └── [  0.0% 0.75ms] basename  node:path:1471
-      └── [  0.2% 3.7ms] resolveImagePath  lib/sync.js:215
-          └── [  0.2% 3.7ms] existsSync  node:fs:276
-              └── [  0.2% 3.7ms] existsSync"
+      [ 18.0% 419.3ms] enrichPage lib/sync.js:93
+      ├[ 11.3% 263.3ms] collectMdxIconRefs lib/mdx-processor.js:43
+      │├[  5.9% 137.2ms] normalizeMdx mintlify/normalize-mdx.js:12
+      ││├[  3.1% 72.5ms] parse nm/unified/lib/index.js:662
+      ││├[  1.2% 28.9ms] toMarkdown nm/mdast-util-to-markdown/lib/index.js:29
+      ││├[  1.2% 28.6ms] parser nm/remark-parse/lib/index.js:31
+      ││├[  0.1% 2.5ms] runSync nm/unified/lib/index.js:943
+      ││├[  0.1% 2.5ms] executor nm/unified/lib/index.js:894
+      ││└[  0.1% 2.2ms] apply nm/unified/lib/callable-instance.js:22
+      │├[  5.1% 118.9ms] mdxParse nm/safe-mdx/dist/parse.js:8
+      ││└[  5.1% 118.9ms] processSync nm/unified/lib/index.js:808
+      │└[  0.3% 7.2ms] parsePageFrontmatter lib/page-frontmatter.js:46
+      │ ├[  0.3% 6.0ms] parseFrontmatterObject lib/frontmatter.js:73
+      │ └[  0.1% 1.3ms] inst.safeParse nm/zod/v4/classic/schemas.js:39
+      ├[  4.5% 105.9ms] processImage lib/image-processor.js:47
+      │├[  2.7% 62.3ms] processImageBuffer lib/image-processor.js:53
+      ││├[  2.4% 55.3ms] importModuleDynamicallyCallback esm/utils:251
+      ││└[  0.3% 5.9ms] gitBlobSha lib/image-processor.js:85
+      │└[  1.9% 43.5ms] readFileSync node:fs:432
+      │ ├[  1.6% 37.5ms] tryReadSync node:fs:411
+      │ ├[  0.2% 3.5ms] openSync node:fs:558
+      │ └[  0.1% 2.5ms] n nm/graceful-fs/graceful-fs.js:1
+      ├[  1.2% 28.1ms] rewriteMdxImages lib/mdx-processor.js:131
+      │├[  1.2% 26.9ms] toMarkdown nm/mdast-util-to-markdown/lib/index.js:29
+      ││└[  1.2% 26.9ms] one nm/zwitch/index.js:94
+      │└[  0.1% 1.3ms] (anonymous) lib/mdx-processor.js:133
+      │ └[  0.1% 1.3ms] rewriteNode lib/mdx-processor.js:148
+      ├[  0.8% 18.3ms] copyToPublic lib/sync.js:252
+      │├[  0.4% 8.5ms] update node:internal/crypto/hash:133
+      │├[  0.2% 3.9ms] readFileSync node:fs:432
+      ││├[  0.1% 1.3ms] openSync node:fs:558
+      ││├[  0.1% 1.3ms] n nm/graceful-fs/graceful-fs.js:1
+      ││└[  0.1% 1.3ms] tryReadSync node:fs:411
+      │├[  0.1% 2.5ms] createHash node:crypto:143
+      ││└[  0.1% 2.5ms] Hash node:internal/crypto/hash:89
+      │├[  0.1% 1.3ms] extname node:path:1550
+      │└[  0.0% 0.75ms] basename node:path:1471
+      └[  0.2% 3.7ms] resolveImagePath lib/sync.js:215
+       └[  0.2% 3.7ms] existsSync node:fs:276
+        └[  0.2% 3.7ms] existsSync"
     `)
   })
 })

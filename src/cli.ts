@@ -93,7 +93,7 @@ Use --min-percent to compact the tree by hiding nodes below a threshold (pruned 
   )
   .option(
     '-d, --max-depth [maxDepth]',
-    z.int().optional().describe('Maximum tree depth to display.'),
+    z.int().default(10).describe('Maximum tree depth to display (default 10).'),
   )
   .option(
     '-f, --focus [focus]',

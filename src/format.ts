@@ -176,14 +176,14 @@ export function formatTree(opts: TreeFormatOptions): string {
   lines.push('')
 
   function renderNode(node: TreeNode, prefix: string, isLast: boolean, depth: number) {
-    // Build the connector: root has no prefix, children get tree lines
-    const connector = depth === 0 ? '' : dim(isLast ? '└── ' : '├── ')
+    // Compact connectors: ├ / └ with no trailing spaces, │ for continuation
+    const connector = depth === 0 ? '' : dim(isLast ? '└' : '├')
     const pctStr = node.totalPercent.toFixed(1).padStart(5)
     const timeStr = formatMs(node.totalMs)
     const badge = `${dim('[')}${colorPercent(pctStr + '%', node.totalPercent)} ${cyan(timeStr)}${dim(']')}`
     const loc =
       node.url || node.lineNumber >= 0
-        ? '  ' + dim(shortenPath(node.url) + (node.lineNumber >= 0 ? ':' + node.lineNumber : ''))
+        ? ' ' + dim(shortenPath(node.url) + (node.lineNumber >= 0 ? ':' + node.lineNumber : ''))
         : ''
 
     // Check if children are pruned by minPercent — if so, show collapsed chain
@@ -197,7 +197,8 @@ export function formatTree(opts: TreeFormatOptions): string {
     // Filter children by minPercent
     const visibleChildren = node.children.filter((c) => c.totalPercent >= minPercent)
 
-    const childPrefix = depth === 0 ? '' : prefix + (isLast ? '    ' : dim('│') + '   ')
+    // Compact continuation: │ for non-last, space for last child
+    const childPrefix = depth === 0 ? '' : prefix + (isLast ? ' ' : dim('│'))
     for (let i = 0; i < visibleChildren.length; i++) {
       const child = visibleChildren[i]!
       const childIsLast = i === visibleChildren.length - 1
