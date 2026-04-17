@@ -17,7 +17,8 @@
 //   JSON.stringify + a side metadata map instead of delimiter parsing.
 
 import { describe, it, expect } from 'vitest'
-import { analyze, type CpuProfile } from './parse.ts'
+import { analyze, buildTree, type CpuProfile } from './parse.ts'
+import { formatTree } from './format.ts'
 
 /** Helper: build a minimal CallFrame with sensible defaults. */
 function frame(opts: {
@@ -285,5 +286,192 @@ describe('analyze', () => {
     expect(nonIdleSamples).toBe(0)
     expect(functions).toEqual([])
     expect(durationSeconds).toBe(0)
+  })
+})
+
+// ─── buildTree + formatTree tests ─────────────────────────────────────────
+
+/** A realistic-ish profile with branching call tree:
+ *
+ *  (root)
+ *  └── main
+ *      ├── handleRequest
+ *      │   ├── dbQuery
+ *      │   │   └── pgExecute  (leaf, sampled)
+ *      │   └── serialize      (leaf, sampled)
+ *      └── authCheck
+ *          └── cryptoVerify    (leaf, sampled)
+ *
+ * Samples hit the three leaves with different frequencies to create
+ * a realistic distribution for testing tree rendering.
+ */
+function makeBranchingProfile(): CpuProfile {
+  return {
+    nodes: [
+      { id: 1, callFrame: frame({ functionName: '(root)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [2] },
+      { id: 2, callFrame: frame({ functionName: 'main', url: 'src/index.ts', lineNumber: 1 }), children: [3, 6] },
+      { id: 3, callFrame: frame({ functionName: 'handleRequest', url: 'src/server.ts', lineNumber: 10 }), children: [4, 5] },
+      { id: 4, callFrame: frame({ functionName: 'dbQuery', url: 'src/db.ts', lineNumber: 20 }), children: [8] },
+      { id: 5, callFrame: frame({ functionName: 'serialize', url: 'src/format.ts', lineNumber: 30 }) },
+      { id: 6, callFrame: frame({ functionName: 'authCheck', url: 'src/auth.ts', lineNumber: 40 }), children: [7] },
+      { id: 7, callFrame: frame({ functionName: 'cryptoVerify', url: '', lineNumber: -1 }) },
+      { id: 8, callFrame: frame({ functionName: 'pgExecute', url: 'node_modules/pg/client.ts', lineNumber: 89 }) },
+    ],
+    // 10 samples: 5 pgExecute, 2 serialize, 3 cryptoVerify
+    samples: [8, 8, 8, 8, 8, 5, 5, 7, 7, 7],
+    startTime: 0,
+    endTime: 10_000_000, // 10s in µs
+    timeDeltas: [
+      1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000,
+      1_000_000, 1_000_000,
+      1_000_000, 1_000_000, 1_000_000,
+    ],
+  }
+}
+
+describe('buildTree', () => {
+  it('builds correct hierarchy with self/total times', () => {
+    const { root, nonIdleSamples } = buildTree(makeBranchingProfile())
+    expect(nonIdleSamples).toBe(10)
+    expect(root.functionName).toBe('(all)')
+    expect(root.children.length).toBe(1) // main
+
+    const main = root.children[0]!
+    expect(main.functionName).toBe('main')
+    expect(main.totalMs).toBe(10_000) // all 10s flow through main
+    expect(main.selfMs).toBe(0) // main is never the leaf
+
+    const handleReq = main.children.find((c) => c.functionName === 'handleRequest')!
+    expect(handleReq.totalMs).toBe(7000) // 5 pgExecute + 2 serialize
+    expect(handleReq.selfMs).toBe(0)
+
+    const authCheck = main.children.find((c) => c.functionName === 'authCheck')!
+    expect(authCheck.totalMs).toBe(3000) // 3 cryptoVerify
+  })
+
+  it('excludes idle nodes from the tree', () => {
+    const profile: CpuProfile = {
+      nodes: [
+        { id: 1, callFrame: frame({ functionName: '(root)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [2, 3] },
+        { id: 2, callFrame: frame({ functionName: '(idle)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }) },
+        { id: 3, callFrame: frame({ functionName: 'work', url: 'w.js' }) },
+      ],
+      samples: [2, 2, 3, 3, 3],
+      startTime: 0,
+      endTime: 5_000_000,
+      timeDeltas: [1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000],
+    }
+    const { root, nonIdleSamples } = buildTree(profile)
+    expect(nonIdleSamples).toBe(3)
+    // Only 'work' should appear, no idle
+    expect(root.children.length).toBe(1)
+    expect(root.children[0]!.functionName).toBe('work')
+  })
+
+  it('prunes nodes with zero samples', () => {
+    const profile: CpuProfile = {
+      nodes: [
+        { id: 1, callFrame: frame({ functionName: '(root)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [2, 3] },
+        { id: 2, callFrame: frame({ functionName: 'hot' }), children: [4] },
+        { id: 3, callFrame: frame({ functionName: 'cold', lineNumber: 99 }) }, // never sampled
+        { id: 4, callFrame: frame({ functionName: 'leaf', lineNumber: 1 }) },
+      ],
+      samples: [4, 4],
+      startTime: 0,
+      endTime: 2_000_000,
+      timeDeltas: [1_000_000, 1_000_000],
+    }
+    const { root } = buildTree(profile)
+    // 'cold' should be pruned — it has 0 totalMs
+    expect(root.children.length).toBe(1)
+    expect(root.children[0]!.functionName).toBe('hot')
+  })
+})
+
+describe('formatTree', () => {
+  it('renders the full tree with inline snapshot', () => {
+    const result = buildTree(makeBranchingProfile())
+    const output = formatTree(result)
+    expect(output).toMatchInlineSnapshot(`
+      "Duration: 10.00s
+      Samples:  10 active / 10 total (0.0% idle)
+
+      [100.0% 10.00s] (all)
+      └── [100.0% 10.00s] main  src/index.ts:1
+          ├── [ 70.0% 7.00s] handleRequest  src/server.ts:10
+          │   ├── [ 50.0% 5.00s] dbQuery  src/db.ts:20
+          │   │   └── [ 50.0% 5.00s] pgExecute  node_modules/pg/client.ts:89
+          │   └── [ 20.0% 2.00s] serialize  src/format.ts:30
+          └── [ 30.0% 3.00s] authCheck  src/auth.ts:40
+              └── [ 30.0% 3.00s] cryptoVerify"
+    `)
+  })
+
+  it('renders with minPercent filtering and collapsed chains', () => {
+    const result = buildTree(makeBranchingProfile())
+    const output = formatTree({ ...result, minPercent: 25 })
+    expect(output).toMatchInlineSnapshot(`
+      "Duration: 10.00s
+      Samples:  10 active / 10 total (0.0% idle)
+
+      [100.0% 10.00s] (all)
+      └── [100.0% 10.00s] main  src/index.ts:1
+          ├── [ 70.0% 7.00s] handleRequest  src/server.ts:10
+          │   └── [ 50.0% 5.00s] dbQuery  src/db.ts:20
+          │       └── [ 50.0% 5.00s] pgExecute  node_modules/pg/client.ts:89
+          └── [ 30.0% 3.00s] authCheck  src/auth.ts:40
+              └── [ 30.0% 3.00s] cryptoVerify"
+    `)
+  })
+
+  it('renders with maxDepth limit', () => {
+    const result = buildTree(makeBranchingProfile())
+    const output = formatTree({ ...result, maxDepth: 2 })
+    expect(output).toMatchInlineSnapshot(`
+      "Duration: 10.00s
+      Samples:  10 active / 10 total (0.0% idle)
+
+      [100.0% 10.00s] (all)
+      └── [100.0% 10.00s] main  src/index.ts:1
+          ├── [ 70.0% 7.00s] handleRequest  src/server.ts:10
+          └── [ 30.0% 3.00s] authCheck  src/auth.ts:40"
+    `)
+  })
+
+  it('renders with focus on a subtree', () => {
+    const result = buildTree(makeBranchingProfile())
+    const output = formatTree({ ...result, focus: 'handleRequest' })
+    expect(output).toMatchInlineSnapshot(`
+      "Duration: 10.00s
+      Samples:  10 active / 10 total (0.0% idle)
+
+      [ 70.0% 7.00s] handleRequest  src/server.ts:10
+      ├── [ 50.0% 5.00s] dbQuery  src/db.ts:20
+      │   └── [ 50.0% 5.00s] pgExecute  node_modules/pg/client.ts:89
+      └── [ 20.0% 2.00s] serialize  src/format.ts:30"
+    `)
+  })
+
+  it('shows error message when focus target not found', () => {
+    const result = buildTree(makeBranchingProfile())
+    const output = formatTree({ ...result, focus: 'nonexistent' })
+    expect(output).toBe('No function matching "nonexistent" found in the call tree.')
+  })
+
+  it('renders with both minPercent and maxDepth combined', () => {
+    const result = buildTree(makeBranchingProfile())
+    const output = formatTree({ ...result, minPercent: 10, maxDepth: 3 })
+    expect(output).toMatchInlineSnapshot(`
+      "Duration: 10.00s
+      Samples:  10 active / 10 total (0.0% idle)
+
+      [100.0% 10.00s] (all)
+      └── [100.0% 10.00s] main  src/index.ts:1
+          ├── [ 70.0% 7.00s] handleRequest  src/server.ts:10
+          │   ├── [ 50.0% 5.00s] dbQuery  src/db.ts:20
+          │   └── [ 20.0% 2.00s] serialize  src/format.ts:30
+          └── [ 30.0% 3.00s] authCheck  src/auth.ts:40
+              └── [ 30.0% 3.00s] cryptoVerify"
+    `)
   })
 })

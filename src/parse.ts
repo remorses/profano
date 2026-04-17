@@ -68,6 +68,29 @@ export interface FunctionStat {
 
 const IDLE_NAMES = new Set(['(idle)', '(garbage collector)', '(program)', '(root)'])
 
+// ─── Tree view types ──────────────────────────────────────────────────────
+
+export interface TreeNode {
+  nodeId: number
+  functionName: string
+  url: string
+  lineNumber: number
+  selfMs: number
+  totalMs: number
+  /** Percent of non-idle active time (self) */
+  selfPercent: number
+  /** Percent of non-idle active time (total/inclusive) */
+  totalPercent: number
+  children: TreeNode[]
+}
+
+export interface TreeResult {
+  root: TreeNode
+  durationSeconds: number
+  totalSamples: number
+  nonIdleSamples: number
+}
+
 /** Full metadata associated with an identity key, kept in a side map so we
  * never have to parse the key string back into its components. */
 interface IdentityMeta {
@@ -220,4 +243,160 @@ export function analyze(profile: CpuProfile): {
   const durationSeconds = (profile.endTime - profile.startTime) / 1e6
 
   return { durationSeconds, totalSamples: sampleCount, nonIdleSamples, functions }
+}
+
+// ─── Tree builder ─────────────────────────────────────────────────────────
+// Builds the actual call-tree hierarchy from the cpuprofile nodes, keeping
+// each call-site as its own TreeNode (no identity dedup — the tree view
+// shows WHERE in the call graph time was spent, not just WHICH function).
+
+export function buildTree(profile: CpuProfile): TreeResult {
+  const nodesById = new Map<number, ProfileNode>()
+  for (const node of profile.nodes) {
+    nodesById.set(node.id, node)
+  }
+
+  // Build parent map
+  const parentMap = new Map<number, number>()
+  for (const node of profile.nodes) {
+    if (node.children) {
+      for (const childId of node.children) {
+        parentMap.set(childId, node.id)
+      }
+    }
+  }
+
+  // Pre-compute per-sample time in microseconds from timeDeltas.
+  const deltas = profile.timeDeltas
+  const totalDurationUs = profile.endTime - profile.startTime
+  const avgDeltaUs =
+    profile.samples.length > 0 ? totalDurationUs / profile.samples.length : 0
+  function sampleDeltaUs(i: number): number {
+    if (deltas && i < deltas.length) return deltas[i]!
+    return avgDeltaUs
+  }
+
+  // Count self-time (µs) per node ID — only the sampled leaf gets self-time
+  const selfUsByNode = new Map<number, number>()
+  for (let i = 0; i < profile.samples.length; i++) {
+    const id = profile.samples[i]!
+    selfUsByNode.set(id, (selfUsByNode.get(id) || 0) + sampleDeltaUs(i))
+  }
+
+  // Count total-time (µs) per node ID — walk from leaf up to root for each
+  // sample, adding time to every node on the stack. Break cycles defensively.
+  const totalUsByNode = new Map<number, number>()
+  for (let i = 0; i < profile.samples.length; i++) {
+    const id = profile.samples[i]!
+    const deltaUs = sampleDeltaUs(i)
+    const visited = new Set<number>()
+    let current: number | undefined = id
+    while (current !== undefined) {
+      if (visited.has(current)) break
+      visited.add(current)
+      totalUsByNode.set(current, (totalUsByNode.get(current) || 0) + deltaUs)
+      current = parentMap.get(current)
+    }
+  }
+
+  // Count non-idle samples for percent calculations
+  let nonIdleSamples = 0
+  for (const id of profile.samples) {
+    const node = nodesById.get(id)
+    if (node && !IDLE_NAMES.has(node.callFrame.functionName)) {
+      nonIdleSamples++
+    }
+  }
+
+  // Total active time in µs (sum of deltas for non-idle samples)
+  let totalActiveUs = 0
+  for (let i = 0; i < profile.samples.length; i++) {
+    const id = profile.samples[i]!
+    const node = nodesById.get(id)
+    if (node && !IDLE_NAMES.has(node.callFrame.functionName)) {
+      totalActiveUs += sampleDeltaUs(i)
+    }
+  }
+
+  // Recursively build TreeNode hierarchy. Skip idle pseudo-nodes and nodes
+  // with zero total time (never appeared in any sample).
+  function buildNode(nodeId: number): TreeNode | null {
+    const pNode = nodesById.get(nodeId)
+    if (!pNode) return null
+    if (IDLE_NAMES.has(pNode.callFrame.functionName)) return null
+
+    const totalUs = totalUsByNode.get(nodeId) || 0
+    if (totalUs === 0) return null
+
+    const selfUs = selfUsByNode.get(nodeId) || 0
+    const selfMs = selfUs / 1000
+    const totalMs = totalUs / 1000
+
+    const children: TreeNode[] = []
+    if (pNode.children) {
+      for (const childId of pNode.children) {
+        const child = buildNode(childId)
+        if (child) children.push(child)
+      }
+    }
+    // Sort children by totalMs descending — hottest path first
+    children.sort((a, b) => b.totalMs - a.totalMs)
+
+    return {
+      nodeId,
+      functionName: pNode.callFrame.functionName || '(anonymous)',
+      url: pNode.callFrame.url,
+      lineNumber: pNode.callFrame.lineNumber,
+      selfMs,
+      totalMs,
+      selfPercent: totalActiveUs > 0 ? (selfUs / totalActiveUs) * 100 : 0,
+      totalPercent: totalActiveUs > 0 ? (totalUs / totalActiveUs) * 100 : 0,
+      children,
+    }
+  }
+
+  // Find root(s). The cpuprofile usually has a single (root) node whose
+  // children are the real top-level functions. We build a synthetic root
+  // that aggregates all top-level non-idle trees.
+  const rootNode = profile.nodes.find(
+    (n) => !parentMap.has(n.id) || n.callFrame.functionName === '(root)',
+  )
+
+  const topChildren: TreeNode[] = []
+  if (rootNode?.children) {
+    for (const childId of rootNode.children) {
+      const child = buildNode(childId)
+      if (child) topChildren.push(child)
+    }
+  } else {
+    // No explicit root — build from all parentless non-idle nodes
+    for (const node of profile.nodes) {
+      if (!parentMap.has(node.id) && !IDLE_NAMES.has(node.callFrame.functionName)) {
+        const child = buildNode(node.id)
+        if (child) topChildren.push(child)
+      }
+    }
+  }
+
+  topChildren.sort((a, b) => b.totalMs - a.totalMs)
+
+  const totalActiveMs = totalActiveUs / 1000
+  const root: TreeNode = {
+    nodeId: -1,
+    functionName: '(all)',
+    url: '',
+    lineNumber: -1,
+    selfMs: 0,
+    totalMs: totalActiveMs,
+    selfPercent: 0,
+    totalPercent: 100,
+    children: topChildren,
+  }
+
+  return {
+    root,
+    durationSeconds: (profile.endTime - profile.startTime) / 1e6,
+    totalSamples: profile.samples.length,
+    nonIdleSamples,
+  }
 }

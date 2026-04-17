@@ -7,8 +7,8 @@ import { goke } from 'goke'
 import { z } from 'zod'
 import { globSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { loadProfile, analyze } from './parse.ts'
-import { formatTable } from './format.ts'
+import { loadProfile, analyze, buildTree } from './parse.ts'
+import { formatTable, formatTree } from './format.ts'
 
 const require = createRequire(import.meta.url)
 const packageJson = require('../package.json') as { version: string }
@@ -74,6 +74,67 @@ Use --sort self to find CPU-bound leaves (hot inner functions) and --sort total 
       const result = analyze(profile)
       console.log(
         formatTable({ ...result, limit: options.limit, sort: options.sort }),
+      )
+    }
+  })
+
+cli
+  .command(
+    'tree [...files]',
+    `Render a hierarchical flamegraph-style call tree from V8 .cpuprofile files.
+
+Shows the actual call hierarchy with time and percentage annotations per node. Unlike the flat table view which deduplicates by function identity, the tree view preserves call-site context — showing WHERE in the call graph each function was invoked.
+
+Use --min-percent to compact the tree by hiding nodes below a threshold (pruned subtrees are collapsed into → chains showing the heaviest path). Use --max-depth to limit depth, and --focus to zoom into a specific function's subtree.`,
+  )
+  .option(
+    '-m, --min-percent [minPercent]',
+    z.number().default(0).describe('Hide nodes below this % of active time. Pruned subtrees show a collapsed → chain.'),
+  )
+  .option(
+    '-d, --max-depth [maxDepth]',
+    z.int().optional().describe('Maximum tree depth to display.'),
+  )
+  .option(
+    '-f, --focus [focus]',
+    z.string().optional().describe('Zoom into the subtree rooted at this function name.'),
+  )
+  .example('# Show full call tree')
+  .example('profano tree profile.cpuprofile')
+  .example('# Compact: hide nodes below 5% of active time')
+  .example('profano tree profile.cpuprofile --min-percent 5')
+  .example('# Limit depth to 4 levels')
+  .example('profano tree profile.cpuprofile --max-depth 4')
+  .example('# Zoom into a specific function')
+  .example('profano tree profile.cpuprofile --focus handleRequest')
+  .action((files: string[], options) => {
+    const resolved: string[] = files.flatMap((f) => {
+      if (f.includes('*')) {
+        const matches = globSync(f)
+        return matches.length > 0 ? matches : [f]
+      }
+      return [f]
+    })
+
+    if (resolved.length === 0) {
+      console.error('No .cpuprofile files passed. Run `profano tree --help` for usage.')
+      process.exit(1)
+    }
+
+    for (const filePath of resolved) {
+      if (resolved.length > 1) {
+        console.log(`\n━━━ ${filePath} ━━━\n`)
+      }
+
+      const profile = loadProfile(filePath)
+      const result = buildTree(profile)
+      console.log(
+        formatTree({
+          ...result,
+          minPercent: options.minPercent,
+          maxDepth: options.maxDepth,
+          focus: options.focus,
+        }),
       )
     }
   })
