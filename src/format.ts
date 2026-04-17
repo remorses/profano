@@ -180,7 +180,7 @@ export function formatTree(opts: TreeFormatOptions): string {
     const connector = depth === 0 ? '' : dim(isLast ? '└' : '├')
     const pctStr = node.totalPercent.toFixed(1).padStart(5)
     const timeStr = formatMs(node.totalMs)
-    const badge = `${dim('[')}${colorPercent(pctStr + '%', node.totalPercent)} ${cyan(timeStr)}${dim(']')}`
+    const badge = `${dim('[')}${colorPercent(pctStr + '%', node.totalPercent)} ${colorPercent(timeStr, node.totalPercent)}${dim(']')}`
     const loc =
       node.url || node.lineNumber >= 0
         ? ' ' + dim(shortenPath(node.url) + (node.lineNumber >= 0 ? ':' + node.lineNumber : ''))
@@ -189,7 +189,8 @@ export function formatTree(opts: TreeFormatOptions): string {
     // Check if children are pruned by minPercent — if so, show collapsed chain
     const collapsed = minPercent > 0 ? collapseChain(node, minPercent) : ''
 
-    lines.push(`${prefix}${connector}${badge} ${bold(node.functionName)}${collapsed}${loc}`)
+    const colorName = (s: string) => bold(colorPercent(s, node.totalPercent))
+    lines.push(`${prefix}${connector}${badge} ${colorName(node.functionName)}${collapsed}${loc}`)
 
     // Stop recursing if at maxDepth
     if (maxDepth !== undefined && depth >= maxDepth) return
