@@ -112,12 +112,15 @@ export interface TreeFormatOptions {
   focus?: string
 }
 
-/** Find the subtree rooted at the first node matching `name` (BFS). */
-function findFocus(node: TreeNode, name: string): TreeNode | null {
-  if (node.functionName === name) return node
-  for (const child of node.children) {
-    const found = findFocus(child, name)
-    if (found) return found
+/** Find the shallowest node matching `name` via BFS. Because children
+ *  are already sorted by totalMs descending, BFS naturally picks the
+ *  hottest match among siblings at the shallowest depth. */
+function findFocus(root: TreeNode, name: string): TreeNode | null {
+  const queue = [root]
+  while (queue.length > 0) {
+    const node = queue.shift()!
+    if (node.functionName === name) return node
+    queue.push(...node.children)
   }
   return null
 }

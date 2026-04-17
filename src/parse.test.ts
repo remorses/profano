@@ -482,6 +482,73 @@ describe('formatTree', () => {
   })
 })
 
+// ─── Regression tests for oracle-found bugs ──────────────────────────────
+
+describe('buildTree edge cases', () => {
+  it('hoists children through (program) wrapper nodes', () => {
+    // Stack: (root) -> (program) -> foo (leaf)
+    // foo must appear in the tree despite being under (program)
+    const profile: CpuProfile = {
+      nodes: [
+        { id: 1, callFrame: frame({ functionName: '(root)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [2] },
+        { id: 2, callFrame: frame({ functionName: '(program)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [3] },
+        { id: 3, callFrame: frame({ functionName: 'foo', url: 'app.js', lineNumber: 1 }) },
+      ],
+      samples: [3, 3],
+      startTime: 0,
+      endTime: 2_000_000,
+      timeDeltas: [1_000_000, 1_000_000],
+    }
+    const { root } = buildTree(profile)
+    // foo should be hoisted as a direct child of (all), not dropped
+    expect(root.children.length).toBe(1)
+    expect(root.children[0]!.functionName).toBe('foo')
+    expect(root.children[0]!.totalMs).toBe(2000)
+  })
+
+  it('hoists through nested (root) -> (program) -> (program) -> bar', () => {
+    const profile: CpuProfile = {
+      nodes: [
+        { id: 1, callFrame: frame({ functionName: '(root)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [2] },
+        { id: 2, callFrame: frame({ functionName: '(program)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [3] },
+        { id: 3, callFrame: frame({ functionName: '(program)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [4] },
+        { id: 4, callFrame: frame({ functionName: 'bar', url: 'b.js', lineNumber: 5 }) },
+      ],
+      samples: [4, 4, 4],
+      startTime: 0,
+      endTime: 3_000_000,
+      timeDeltas: [1_000_000, 1_000_000, 1_000_000],
+    }
+    const { root } = buildTree(profile)
+    expect(root.children.length).toBe(1)
+    expect(root.children[0]!.functionName).toBe('bar')
+  })
+})
+
+describe('findFocus BFS behavior', () => {
+  it('picks the shallowest match, not a deeply nested one', () => {
+    // Tree: (all) -> a (60%) -> target (10%)
+    //                        -> target (40%)   <-- shallower, should be picked
+    const profile: CpuProfile = {
+      nodes: [
+        { id: 1, callFrame: frame({ functionName: '(root)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [2, 5] },
+        { id: 2, callFrame: frame({ functionName: 'a', lineNumber: 1 }), children: [3] },
+        { id: 3, callFrame: frame({ functionName: 'target', lineNumber: 2 }) },
+        { id: 5, callFrame: frame({ functionName: 'target', lineNumber: 3, scriptId: '2' }) },
+      ],
+      samples: [3, 5, 5, 5],
+      startTime: 0,
+      endTime: 4_000_000,
+      timeDeltas: [1_000_000, 1_000_000, 1_000_000, 1_000_000],
+    }
+    const result = buildTree(profile)
+    const output = stripAnsi(formatTree({ ...result, focus: 'target' }))
+    // Should pick the 75% target (3 out of 4 samples), not the 25% nested one
+    expect(output).toContain('75.0%')
+    expect(output).not.toMatch(/^\[.*25\.0%.*\] target$/m)
+  })
+})
+
 // ─── Real-world .cpuprofile snapshot ──────────────────────────────────────
 
 describe('real-world cpuprofile tree', () => {
@@ -524,55 +591,46 @@ describe('real-world cpuprofile tree', () => {
       "Duration: 2.54s
       Samples:  2150 active / 2316 total (7.2% idle)
 
-      [ 25.8% 602.5ms] enrichPage  lib/sync.js:93
-      ├── [ 14.5% 338.4ms] processMdx  lib/mdx-processor.js:19
-      │   ├── [  7.1% 165.7ms] normalizeMdx  mintlify/normalize-mdx.js:12
-      │   │   ├── [  5.0% 117.0ms] parse  nm/unified/lib/index.js:662
-      │   │   ├── [  1.2% 27.9ms] toMarkdown  nm/mdast-util-to-markdown/lib/index.js:29
-      │   │   ├── [  0.7% 15.8ms] runSync  nm/unified/lib/index.js:943
-      │   │   ├── [  0.2% 3.7ms] apply  nm/unified/lib/callable-instance.js:22
-      │   │   └── [  0.1% 1.3ms] frontmatterToMarkdown  nm/mdast-util-frontmatter/lib/index.js:91
-      │   ├── [  6.8% 158.6ms] mdxParse  nm/safe-mdx/dist/parse.js:8
-      │   │   └── [  6.8% 158.6ms] processSync  nm/unified/lib/index.js:808
-      │   ├── [  0.5% 11.2ms] parsePageFrontmatter  lib/page-frontmatter.js:46
-      │   │   ├── [  0.4% 8.8ms] parseFrontmatterObject  lib/frontmatter.js:73
-      │   │   └── [  0.1% 1.2ms] (anonymous)  nm/zod/v4/core/parse.js:30
-      │   └── [  0.1% 2.9ms] collectImageSrcs  lib/mdx-processor.js:102
-      │       └── [  0.1% 2.9ms] walk  lib/mdx-processor.js:104
-      ├── [  8.5% 197.8ms] collectMdxIconRefs  lib/mdx-processor.js:43
-      │   ├── [  4.3% 99.2ms] normalizeMdx  mintlify/normalize-mdx.js:12
-      │   │   ├── [  3.1% 73.2ms] parse  nm/unified/lib/index.js:662
-      │   │   ├── [  0.8% 18.4ms] toMarkdown  nm/mdast-util-to-markdown/lib/index.js:29
-      │   │   └── [  0.3% 7.5ms] runSync  nm/unified/lib/index.js:943
-      │   ├── [  3.8% 87.5ms] mdxParse  nm/safe-mdx/dist/parse.js:8
-      │   │   └── [  3.8% 87.5ms] processSync  nm/unified/lib/index.js:808
-      │   ├── [  0.4% 10.0ms] parsePageFrontmatter  lib/page-frontmatter.js:46
-      │   │   ├── [  0.4% 8.7ms] parseFrontmatterObject  lib/frontmatter.js:73
-      │   │   └── [  0.1% 1.3ms] inst.safeParse  nm/zod/v4/classic/schemas.js:39
-      │   └── [  0.1% 1.2ms] collectIconRefsFromMdast  lib/mdx-processor.js:49
-      │       └── [  0.1% 1.2ms] walk  lib/mdx-processor.js:54
-      ├── [  1.1% 26.1ms] processImage  lib/image-processor.js:47
-      │   ├── [  0.8% 19.1ms] processImageBuffer  lib/image-processor.js:53
-      │   │   ├── [  0.6% 13.9ms] importModuleDynamicallyCallback  esm/utils:251
-      │   │   └── [  0.2% 5.0ms] gitBlobSha  lib/image-processor.js:85
-      │   └── [  0.3% 7.0ms] readFileSync  node:fs:432
-      │       └── [  0.3% 7.0ms] tryReadSync  node:fs:411
-      ├── [  1.0% 24.1ms] readFileSync  node:fs:432
-      │   └── [  1.0% 24.1ms] readFileUtf8
-      ├── [  0.3% 6.2ms] fetchRemoteImageBuffer  lib/sync.js:237
-      │   └── [  0.3% 6.2ms] fetch  web/exposed-window-or-worker:77
-      │       └── [  0.3% 6.2ms] fetch  undici/undici:16553
-      ├── [  0.2% 3.8ms] gitBlobSha  lib/git-sha.js:11
-      │   ├── [  0.1% 2.5ms] from  node:buffer:320
-      │   │   └── [  0.1% 1.2ms] fromString  node:buffer:507
-      │   └── [  0.1% 1.3ms] createHash  node:crypto:143
-      │       └── [  0.1% 1.3ms] Hash  node:internal/crypto/hash:89
-      ├── [  0.1% 2.5ms] resolveMdxPath  lib/sync.js:315
-      │   └── [  0.1% 1.3ms] existsSync  node:fs:276
-      │       └── [  0.1% 1.3ms] existsSync
-      ├── [  0.1% 1.3ms] mdxParse  nm/safe-mdx/dist/parse.js:8
-      ├── [  0.1% 1.3ms] slugToHref  lib/sync.js:324
-      └── [  0.0% 1.1ms] dirname  node:path:1440"
+      [ 18.0% 419.3ms] enrichPage  lib/sync.js:93
+      ├── [ 11.3% 263.3ms] collectMdxIconRefs  lib/mdx-processor.js:43
+      │   ├── [  5.9% 137.2ms] normalizeMdx  mintlify/normalize-mdx.js:12
+      │   │   ├── [  3.1% 72.5ms] parse  nm/unified/lib/index.js:662
+      │   │   ├── [  1.2% 28.9ms] toMarkdown  nm/mdast-util-to-markdown/lib/index.js:29
+      │   │   ├── [  1.2% 28.6ms] parser  nm/remark-parse/lib/index.js:31
+      │   │   ├── [  0.1% 2.5ms] runSync  nm/unified/lib/index.js:943
+      │   │   ├── [  0.1% 2.5ms] executor  nm/unified/lib/index.js:894
+      │   │   └── [  0.1% 2.2ms] apply  nm/unified/lib/callable-instance.js:22
+      │   ├── [  5.1% 118.9ms] mdxParse  nm/safe-mdx/dist/parse.js:8
+      │   │   └── [  5.1% 118.9ms] processSync  nm/unified/lib/index.js:808
+      │   └── [  0.3% 7.2ms] parsePageFrontmatter  lib/page-frontmatter.js:46
+      │       ├── [  0.3% 6.0ms] parseFrontmatterObject  lib/frontmatter.js:73
+      │       └── [  0.1% 1.3ms] inst.safeParse  nm/zod/v4/classic/schemas.js:39
+      ├── [  4.5% 105.9ms] processImage  lib/image-processor.js:47
+      │   ├── [  2.7% 62.3ms] processImageBuffer  lib/image-processor.js:53
+      │   │   ├── [  2.4% 55.3ms] importModuleDynamicallyCallback  esm/utils:251
+      │   │   └── [  0.3% 5.9ms] gitBlobSha  lib/image-processor.js:85
+      │   └── [  1.9% 43.5ms] readFileSync  node:fs:432
+      │       ├── [  1.6% 37.5ms] tryReadSync  node:fs:411
+      │       ├── [  0.2% 3.5ms] openSync  node:fs:558
+      │       └── [  0.1% 2.5ms] n  nm/graceful-fs/graceful-fs.js:1
+      ├── [  1.2% 28.1ms] rewriteMdxImages  lib/mdx-processor.js:131
+      │   ├── [  1.2% 26.9ms] toMarkdown  nm/mdast-util-to-markdown/lib/index.js:29
+      │   │   └── [  1.2% 26.9ms] one  nm/zwitch/index.js:94
+      │   └── [  0.1% 1.3ms] (anonymous)  lib/mdx-processor.js:133
+      │       └── [  0.1% 1.3ms] rewriteNode  lib/mdx-processor.js:148
+      ├── [  0.8% 18.3ms] copyToPublic  lib/sync.js:252
+      │   ├── [  0.4% 8.5ms] update  node:internal/crypto/hash:133
+      │   ├── [  0.2% 3.9ms] readFileSync  node:fs:432
+      │   │   ├── [  0.1% 1.3ms] openSync  node:fs:558
+      │   │   ├── [  0.1% 1.3ms] n  nm/graceful-fs/graceful-fs.js:1
+      │   │   └── [  0.1% 1.3ms] tryReadSync  node:fs:411
+      │   ├── [  0.1% 2.5ms] createHash  node:crypto:143
+      │   │   └── [  0.1% 2.5ms] Hash  node:internal/crypto/hash:89
+      │   ├── [  0.1% 1.3ms] extname  node:path:1550
+      │   └── [  0.0% 0.75ms] basename  node:path:1471
+      └── [  0.2% 3.7ms] resolveImagePath  lib/sync.js:215
+          └── [  0.2% 3.7ms] existsSync  node:fs:276
+              └── [  0.2% 3.7ms] existsSync"
     `)
   })
 })

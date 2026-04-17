@@ -318,64 +318,62 @@ export function buildTree(profile: CpuProfile): TreeResult {
     }
   }
 
-  // Recursively build TreeNode hierarchy. Skip idle pseudo-nodes and nodes
-  // with zero total time (never appeared in any sample).
-  function buildNode(nodeId: number): TreeNode | null {
+  // Pseudo-frames that should never appear as visible nodes but whose
+  // children should be hoisted into the parent (transparent wrappers).
+  const TRANSPARENT_NAMES = new Set(['(root)', '(program)'])
+  // Pseudo-frames whose entire subtree should be dropped (no useful data).
+  const DROP_NAMES = new Set(['(idle)', '(garbage collector)'])
+
+  // Recursively build visible TreeNode hierarchy. Transparent wrapper
+  // nodes like (root) and (program) are skipped but their children are
+  // hoisted. Idle/GC subtrees and zero-sample nodes are dropped entirely.
+  function buildVisibleNodes(nodeId: number): TreeNode[] {
     const pNode = nodesById.get(nodeId)
-    if (!pNode) return null
-    if (IDLE_NAMES.has(pNode.callFrame.functionName)) return null
+    if (!pNode) return []
 
+    const name = pNode.callFrame.functionName
     const totalUs = totalUsByNode.get(nodeId) || 0
-    if (totalUs === 0) return null
+    if (totalUs === 0) return []
 
-    const selfUs = selfUsByNode.get(nodeId) || 0
-    const selfMs = selfUs / 1000
-    const totalMs = totalUs / 1000
+    // Drop idle/GC subtrees entirely
+    if (DROP_NAMES.has(name)) return []
 
-    const children: TreeNode[] = []
-    if (pNode.children) {
-      for (const childId of pNode.children) {
-        const child = buildNode(childId)
-        if (child) children.push(child)
-      }
-    }
-    // Sort children by totalMs descending — hottest path first
+    // Collect children recursively (always — even for transparent nodes)
+    const children: TreeNode[] = (pNode.children ?? []).flatMap(buildVisibleNodes)
     children.sort((a, b) => b.totalMs - a.totalMs)
 
-    return {
+    // Transparent wrappers: hoist their children, hide the node itself
+    if (TRANSPARENT_NAMES.has(name)) return children
+
+    const selfUs = selfUsByNode.get(nodeId) || 0
+    return [{
       nodeId,
-      functionName: pNode.callFrame.functionName || '(anonymous)',
+      functionName: name || '(anonymous)',
       url: pNode.callFrame.url,
       lineNumber: pNode.callFrame.lineNumber,
-      selfMs,
-      totalMs,
+      selfMs: selfUs / 1000,
+      totalMs: totalUs / 1000,
       selfPercent: totalActiveUs > 0 ? (selfUs / totalActiveUs) * 100 : 0,
       totalPercent: totalActiveUs > 0 ? (totalUs / totalActiveUs) * 100 : 0,
       children,
-    }
+    }]
   }
 
   // Find root(s). The cpuprofile usually has a single (root) node whose
-  // children are the real top-level functions. We build a synthetic root
-  // that aggregates all top-level non-idle trees.
+  // children are the real top-level functions. We use buildVisibleNodes
+  // which transparently hoists through (root) and (program).
   const rootNode = profile.nodes.find(
     (n) => !parentMap.has(n.id) || n.callFrame.functionName === '(root)',
   )
 
-  const topChildren: TreeNode[] = []
-  if (rootNode?.children) {
-    for (const childId of rootNode.children) {
-      const child = buildNode(childId)
-      if (child) topChildren.push(child)
-    }
+  let topChildren: TreeNode[]
+  if (rootNode) {
+    topChildren = buildVisibleNodes(rootNode.id)
   } else {
     // No explicit root — build from all parentless non-idle nodes
-    for (const node of profile.nodes) {
-      if (!parentMap.has(node.id) && !IDLE_NAMES.has(node.callFrame.functionName)) {
-        const child = buildNode(node.id)
-        if (child) topChildren.push(child)
-      }
-    }
+    topChildren = profile.nodes
+      .filter((n) => !parentMap.has(n.id))
+      .flatMap((n) => buildVisibleNodes(n.id))
   }
 
   topChildren.sort((a, b) => b.totalMs - a.totalMs)
