@@ -112,15 +112,17 @@ export interface TreeFormatOptions {
   focus?: string
 }
 
-/** Find the shallowest node matching `name` via BFS. Because children
- *  are already sorted by totalMs descending, BFS naturally picks the
- *  hottest match among siblings at the shallowest depth. */
+/** Find the shallowest node matching `name` via level-by-level BFS.
+ *  When multiple matches exist at the same shallowest depth, returns
+ *  the one with the highest totalMs (hottest). */
 function findFocus(root: TreeNode, name: string): TreeNode | null {
-  const queue = [root]
-  while (queue.length > 0) {
-    const node = queue.shift()!
-    if (node.functionName === name) return node
-    queue.push(...node.children)
+  let level = [root]
+  while (level.length > 0) {
+    const matches = level.filter((n) => n.functionName === name)
+    if (matches.length > 0) {
+      return matches.reduce((best, n) => (n.totalMs > best.totalMs ? n : best))
+    }
+    level = level.flatMap((n) => n.children)
   }
   return null
 }

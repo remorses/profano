@@ -547,6 +547,49 @@ describe('findFocus BFS behavior', () => {
     expect(output).toContain('75.0%')
     expect(output).not.toMatch(/^\[.*25\.0%.*\] target$/m)
   })
+
+  it('picks the hottest match when duplicates exist at the same depth', () => {
+    // Tree: (all)
+    //   ├── A -> other (10 samples), target (1 sample)
+    //   └── B -> target (6 samples)    <-- same depth, hotter
+    const profile: CpuProfile = {
+      nodes: [
+        { id: 1, callFrame: frame({ functionName: '(root)', url: '', scriptId: '0', lineNumber: -1, columnNumber: -1 }), children: [2, 5] },
+        { id: 2, callFrame: frame({ functionName: 'A', lineNumber: 1 }), children: [3, 4] },
+        { id: 3, callFrame: frame({ functionName: 'other', lineNumber: 2 }) },
+        { id: 4, callFrame: frame({ functionName: 'target', lineNumber: 3 }) },
+        { id: 5, callFrame: frame({ functionName: 'B', lineNumber: 4, scriptId: '2' }), children: [6] },
+        { id: 6, callFrame: frame({ functionName: 'target', lineNumber: 5, scriptId: '2' }) },
+      ],
+      // 10 other, 1 target-under-A, 6 target-under-B
+      samples: [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 6, 6, 6, 6, 6, 6],
+      startTime: 0,
+      endTime: 17_000_000,
+      timeDeltas: Array(17).fill(1_000_000),
+    }
+    const result = buildTree(profile)
+    const output = stripAnsi(formatTree({ ...result, focus: 'target' }))
+    // Should pick the 6-sample target (under B at ~35.3%), not the 1-sample one (~5.9%)
+    expect(output).toMatch(/35\.3%/)
+  })
+})
+
+describe('buildTree with no explicit root', () => {
+  it('renders all parentless trees when no (root) node exists', () => {
+    const profile: CpuProfile = {
+      nodes: [
+        { id: 1, callFrame: frame({ functionName: 'foo' }) },
+        { id: 2, callFrame: frame({ functionName: 'bar', lineNumber: 1, scriptId: '2' }) },
+      ],
+      samples: [1, 2],
+      startTime: 0,
+      endTime: 2_000_000,
+      timeDeltas: [1_000_000, 1_000_000],
+    }
+    const { root } = buildTree(profile)
+    const names = root.children.map((c) => c.functionName).sort()
+    expect(names).toEqual(['bar', 'foo'])
+  })
 })
 
 // ─── Real-world .cpuprofile snapshot ──────────────────────────────────────

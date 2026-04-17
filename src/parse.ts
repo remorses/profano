@@ -362,19 +362,18 @@ export function buildTree(profile: CpuProfile): TreeResult {
   // Find root(s). The cpuprofile usually has a single (root) node whose
   // children are the real top-level functions. We use buildVisibleNodes
   // which transparently hoists through (root) and (program).
-  const rootNode = profile.nodes.find(
-    (n) => !parentMap.has(n.id) || n.callFrame.functionName === '(root)',
+  // Look specifically for a node named (root) — don't just grab the first
+  // parentless node, otherwise profiles with multiple parentless trees
+  // and no (root) would only render the first tree.
+  const explicitRoot = profile.nodes.find(
+    (n) => n.callFrame.functionName === '(root)',
   )
 
-  let topChildren: TreeNode[]
-  if (rootNode) {
-    topChildren = buildVisibleNodes(rootNode.id)
-  } else {
-    // No explicit root — build from all parentless non-idle nodes
-    topChildren = profile.nodes
-      .filter((n) => !parentMap.has(n.id))
-      .flatMap((n) => buildVisibleNodes(n.id))
-  }
+  const topChildren = explicitRoot
+    ? buildVisibleNodes(explicitRoot.id)
+    : profile.nodes
+        .filter((n) => !parentMap.has(n.id))
+        .flatMap((n) => buildVisibleNodes(n.id))
 
   topChildren.sort((a, b) => b.totalMs - a.totalMs)
 
