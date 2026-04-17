@@ -17,8 +17,14 @@
 //   JSON.stringify + a side metadata map instead of delimiter parsing.
 
 import { describe, it, expect } from 'vitest'
-import { analyze, buildTree, type CpuProfile } from './parse.ts'
+import { analyze, buildTree, loadProfile, type CpuProfile } from './parse.ts'
 import { formatTree } from './format.ts'
+import { join } from 'node:path'
+
+/** Strip ANSI escape sequences so snapshots are readable and stable
+ *  regardless of color support in the test environment. */
+// eslint-disable-next-line no-control-regex
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 
 /** Helper: build a minimal CallFrame with sensible defaults. */
 function frame(opts: {
@@ -391,7 +397,7 @@ describe('buildTree', () => {
 describe('formatTree', () => {
   it('renders the full tree with inline snapshot', () => {
     const result = buildTree(makeBranchingProfile())
-    const output = formatTree(result)
+    const output = stripAnsi(formatTree(result))
     expect(output).toMatchInlineSnapshot(`
       "Duration: 10.00s
       Samples:  10 active / 10 total (0.0% idle)
@@ -409,7 +415,7 @@ describe('formatTree', () => {
 
   it('renders with minPercent filtering and collapsed chains', () => {
     const result = buildTree(makeBranchingProfile())
-    const output = formatTree({ ...result, minPercent: 25 })
+    const output = stripAnsi(formatTree({ ...result, minPercent: 25 }))
     expect(output).toMatchInlineSnapshot(`
       "Duration: 10.00s
       Samples:  10 active / 10 total (0.0% idle)
@@ -426,7 +432,7 @@ describe('formatTree', () => {
 
   it('renders with maxDepth limit', () => {
     const result = buildTree(makeBranchingProfile())
-    const output = formatTree({ ...result, maxDepth: 2 })
+    const output = stripAnsi(formatTree({ ...result, maxDepth: 2 }))
     expect(output).toMatchInlineSnapshot(`
       "Duration: 10.00s
       Samples:  10 active / 10 total (0.0% idle)
@@ -440,7 +446,7 @@ describe('formatTree', () => {
 
   it('renders with focus on a subtree', () => {
     const result = buildTree(makeBranchingProfile())
-    const output = formatTree({ ...result, focus: 'handleRequest' })
+    const output = stripAnsi(formatTree({ ...result, focus: 'handleRequest' }))
     expect(output).toMatchInlineSnapshot(`
       "Duration: 10.00s
       Samples:  10 active / 10 total (0.0% idle)
@@ -460,7 +466,7 @@ describe('formatTree', () => {
 
   it('renders with both minPercent and maxDepth combined', () => {
     const result = buildTree(makeBranchingProfile())
-    const output = formatTree({ ...result, minPercent: 10, maxDepth: 3 })
+    const output = stripAnsi(formatTree({ ...result, minPercent: 10, maxDepth: 3 }))
     expect(output).toMatchInlineSnapshot(`
       "Duration: 10.00s
       Samples:  10 active / 10 total (0.0% idle)
@@ -472,6 +478,101 @@ describe('formatTree', () => {
           │   └── [ 20.0% 2.00s] serialize  src/format.ts:30
           └── [ 30.0% 3.00s] authCheck  src/auth.ts:40
               └── [ 30.0% 3.00s] cryptoVerify"
+    `)
+  })
+})
+
+// ─── Real-world .cpuprofile snapshot ──────────────────────────────────────
+
+describe('real-world cpuprofile tree', () => {
+  const profilePath = join(import.meta.dirname!, '..', 'realworld-polar-dev.cpuprofile')
+
+  it('renders tree with --min-percent 5 --max-depth 4', () => {
+    const profile = loadProfile(profilePath)
+    const result = buildTree(profile)
+    const output = stripAnsi(formatTree({ ...result, minPercent: 5, maxDepth: 4 }))
+    expect(output).toMatchInlineSnapshot(`
+      "Duration: 2.54s
+      Samples:  2150 active / 2316 total (7.2% idle)
+
+      [100.0% 2.33s] (all)
+      ├── [ 49.3% 1.15s] resolveConfig  nm/vite/dist/node/chunks/node.js:34002
+      │   └── [ 49.0% 1.14s] (anonymous)  nm/vite/dist/node/chunks/node.js:34311
+      │       └── [ 49.0% 1.14s] configResolved  dist/vite-plugin.js:134
+      │           └── [ 48.9% 1.14s] syncNavigation  lib/sync.js:74
+      ├── [ 18.0% 419.3ms] enrichPage  lib/sync.js:93
+      │   └── [ 11.3% 263.3ms] collectMdxIconRefs  lib/mdx-processor.js:43
+      │       ├── [  5.9% 137.2ms] normalizeMdx → parse [3.1%] → parser [3.1%] → write [1.3%] → main [1.2%] → go [1.2%] → flowContinue [0.8%] → writeToChild [0.7%] → write [0.7%] → main [0.7%] → go [0.7%] → inside [0.1%] → before [0.1%] → mdxExpressionParse [0.1%] → eventsToAcorn [0.1%] → parseExpressionAt [0.1%] → pp.nextToken [0.1%] → readToken [0.1%] → pp.getTokenFromCode [0.1%] → pp.readNumber [0.1%] → pp.fullCharCodeAtPos [0.1%]  mintlify/normalize-mdx.js:12
+      │       └── [  5.1% 118.9ms] mdxParse  nm/safe-mdx/dist/parse.js:8
+      │           └── [  5.1% 118.9ms] processSync  nm/unified/lib/index.js:808
+      ├── [ 16.3% 379.6ms] run  esm/module_job:418
+      │   └── [ 16.2% 377.0ms] evaluate
+      │       └── [  8.6% 199.6ms] (anonymous)  esm/translators:228
+      │           └── [  8.6% 199.6ms] loadCJSModuleWithModuleLoad  esm/translators:323
+      └── [ 13.9% 323.5ms] loadConfigFromBundledFile  nm/vite/dist/node/chunks/node.js:34562
+          └── [ 13.9% 323.5ms] importModuleDynamicallyCallback  esm/utils:251
+              └── [ 13.9% 323.5ms] defaultImportModuleDynamicallyForModule  esm/utils:222
+                  └── [ 13.9% 323.5ms] import  esm/loader:644"
+    `)
+  })
+
+  it('renders tree focused on enrichPage', () => {
+    const profile = loadProfile(profilePath)
+    const result = buildTree(profile)
+    const output = stripAnsi(formatTree({ ...result, focus: 'enrichPage', maxDepth: 3 }))
+    expect(output).toMatchInlineSnapshot(`
+      "Duration: 2.54s
+      Samples:  2150 active / 2316 total (7.2% idle)
+
+      [ 25.8% 602.5ms] enrichPage  lib/sync.js:93
+      ├── [ 14.5% 338.4ms] processMdx  lib/mdx-processor.js:19
+      │   ├── [  7.1% 165.7ms] normalizeMdx  mintlify/normalize-mdx.js:12
+      │   │   ├── [  5.0% 117.0ms] parse  nm/unified/lib/index.js:662
+      │   │   ├── [  1.2% 27.9ms] toMarkdown  nm/mdast-util-to-markdown/lib/index.js:29
+      │   │   ├── [  0.7% 15.8ms] runSync  nm/unified/lib/index.js:943
+      │   │   ├── [  0.2% 3.7ms] apply  nm/unified/lib/callable-instance.js:22
+      │   │   └── [  0.1% 1.3ms] frontmatterToMarkdown  nm/mdast-util-frontmatter/lib/index.js:91
+      │   ├── [  6.8% 158.6ms] mdxParse  nm/safe-mdx/dist/parse.js:8
+      │   │   └── [  6.8% 158.6ms] processSync  nm/unified/lib/index.js:808
+      │   ├── [  0.5% 11.2ms] parsePageFrontmatter  lib/page-frontmatter.js:46
+      │   │   ├── [  0.4% 8.8ms] parseFrontmatterObject  lib/frontmatter.js:73
+      │   │   └── [  0.1% 1.2ms] (anonymous)  nm/zod/v4/core/parse.js:30
+      │   └── [  0.1% 2.9ms] collectImageSrcs  lib/mdx-processor.js:102
+      │       └── [  0.1% 2.9ms] walk  lib/mdx-processor.js:104
+      ├── [  8.5% 197.8ms] collectMdxIconRefs  lib/mdx-processor.js:43
+      │   ├── [  4.3% 99.2ms] normalizeMdx  mintlify/normalize-mdx.js:12
+      │   │   ├── [  3.1% 73.2ms] parse  nm/unified/lib/index.js:662
+      │   │   ├── [  0.8% 18.4ms] toMarkdown  nm/mdast-util-to-markdown/lib/index.js:29
+      │   │   └── [  0.3% 7.5ms] runSync  nm/unified/lib/index.js:943
+      │   ├── [  3.8% 87.5ms] mdxParse  nm/safe-mdx/dist/parse.js:8
+      │   │   └── [  3.8% 87.5ms] processSync  nm/unified/lib/index.js:808
+      │   ├── [  0.4% 10.0ms] parsePageFrontmatter  lib/page-frontmatter.js:46
+      │   │   ├── [  0.4% 8.7ms] parseFrontmatterObject  lib/frontmatter.js:73
+      │   │   └── [  0.1% 1.3ms] inst.safeParse  nm/zod/v4/classic/schemas.js:39
+      │   └── [  0.1% 1.2ms] collectIconRefsFromMdast  lib/mdx-processor.js:49
+      │       └── [  0.1% 1.2ms] walk  lib/mdx-processor.js:54
+      ├── [  1.1% 26.1ms] processImage  lib/image-processor.js:47
+      │   ├── [  0.8% 19.1ms] processImageBuffer  lib/image-processor.js:53
+      │   │   ├── [  0.6% 13.9ms] importModuleDynamicallyCallback  esm/utils:251
+      │   │   └── [  0.2% 5.0ms] gitBlobSha  lib/image-processor.js:85
+      │   └── [  0.3% 7.0ms] readFileSync  node:fs:432
+      │       └── [  0.3% 7.0ms] tryReadSync  node:fs:411
+      ├── [  1.0% 24.1ms] readFileSync  node:fs:432
+      │   └── [  1.0% 24.1ms] readFileUtf8
+      ├── [  0.3% 6.2ms] fetchRemoteImageBuffer  lib/sync.js:237
+      │   └── [  0.3% 6.2ms] fetch  web/exposed-window-or-worker:77
+      │       └── [  0.3% 6.2ms] fetch  undici/undici:16553
+      ├── [  0.2% 3.8ms] gitBlobSha  lib/git-sha.js:11
+      │   ├── [  0.1% 2.5ms] from  node:buffer:320
+      │   │   └── [  0.1% 1.2ms] fromString  node:buffer:507
+      │   └── [  0.1% 1.3ms] createHash  node:crypto:143
+      │       └── [  0.1% 1.3ms] Hash  node:internal/crypto/hash:89
+      ├── [  0.1% 2.5ms] resolveMdxPath  lib/sync.js:315
+      │   └── [  0.1% 1.3ms] existsSync  node:fs:276
+      │       └── [  0.1% 1.3ms] existsSync
+      ├── [  0.1% 1.3ms] mdxParse  nm/safe-mdx/dist/parse.js:8
+      ├── [  0.1% 1.3ms] slugToHref  lib/sync.js:324
+      └── [  0.0% 1.1ms] dirname  node:path:1440"
     `)
   })
 })

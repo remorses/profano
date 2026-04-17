@@ -1,6 +1,7 @@
 // Format profile analysis results as a terminal table and tree views.
 
 import type { FunctionStat, TreeNode } from './parse.ts'
+import { bold, cyan, dim, yellow, red, green, gray, white } from './colors.ts'
 
 export type SortMode = 'self' | 'total'
 
@@ -57,35 +58,43 @@ export function formatTable(opts: {
       : (b.selfMs - a.selfMs) || (b.selfSamples - a.selfSamples),
   )
 
-  lines.push(`Duration: ${durationSeconds.toFixed(2)}s`)
-  lines.push(`Samples:  ${nonIdleSamples} active / ${totalSamples} total (${idlePct}% idle)`)
-  lines.push(`Sort:     ${sort}`)
+  lines.push(`Duration: ${bold(durationSeconds.toFixed(2) + 's')}`)
+  lines.push(`Samples:  ${bold(String(nonIdleSamples))} active / ${String(totalSamples)} total (${dim(idlePct + '% idle')})`)
+  lines.push(`Sort:     ${bold(sort)}`)
   lines.push('')
   lines.push(
-    '   Self  %Self   Self ms    Total  %Total  Total ms  Function                                    Location',
+    dim('   Self  %Self   Self ms    Total  %Total  Total ms  Function                                    Location'),
   )
   lines.push(
-    '───────  ──────  ───────  ───────  ──────  ────────  ──────────────────────────────────────────  ────────────────────────────────',
+    dim('───────  ──────  ───────  ───────  ──────  ────────  ──────────────────────────────────────────  ────────────────────────────────'),
   )
 
   const shown = sorted.slice(0, limit)
   for (const fn of shown) {
     const self = String(fn.selfSamples).padStart(7)
-    const selfPct = fn.activePercent.toFixed(1).padStart(5) + '%'
-    const selfMs = formatMs(fn.selfMs).padStart(7)
+    const selfPct = colorPercent(fn.activePercent.toFixed(1).padStart(5) + '%', fn.activePercent)
+    const selfMs = cyan(formatMs(fn.selfMs).padStart(7))
     const total = String(fn.totalSamples).padStart(7)
-    const totalPct = fn.totalActivePercent.toFixed(1).padStart(5) + '%'
-    const totalMs = formatMs(fn.totalMs).padStart(8)
-    const name = fn.functionName.padEnd(42).slice(0, 42)
-    const loc = shortenPath(fn.url) + (fn.lineNumber >= 0 ? ':' + fn.lineNumber : '')
+    const totalPct = colorPercent(fn.totalActivePercent.toFixed(1).padStart(5) + '%', fn.totalActivePercent)
+    const totalMs = cyan(formatMs(fn.totalMs).padStart(8))
+    const name = bold(fn.functionName.padEnd(42).slice(0, 42))
+    const loc = dim(shortenPath(fn.url) + (fn.lineNumber >= 0 ? ':' + fn.lineNumber : ''))
     lines.push(`${self}  ${selfPct}  ${selfMs}  ${total}  ${totalPct}  ${totalMs}  ${name}  ${loc}`)
   }
 
   if (functions.length > limit) {
-    lines.push(`  ... and ${functions.length - limit} more functions`)
+    lines.push(dim(`  ... and ${functions.length - limit} more functions`))
   }
 
   return lines.join('\n')
+}
+
+/** Color a percentage string based on how hot it is */
+function colorPercent(str: string, pct: number): string {
+  if (pct >= 30) return red(str)
+  if (pct >= 10) return yellow(str)
+  if (pct >= 1) return white(str)
+  return dim(str)
 }
 
 // ─── Tree formatter ───────────────────────────────────────────────────────
@@ -122,10 +131,10 @@ function collapseChain(node: TreeNode, minPercent: number): string {
   while (current.children.length > 0) {
     const heaviest = current.children[0]! // already sorted by totalMs desc
     if (heaviest.totalPercent >= minPercent) break
-    parts.push(`${heaviest.functionName} [${heaviest.totalPercent.toFixed(1)}%]`)
+    parts.push(`${heaviest.functionName} ${dim('[' + heaviest.totalPercent.toFixed(1) + '%]')}`)
     current = heaviest
   }
-  return parts.length > 0 ? ' → ' + parts.join(' → ') : ''
+  return parts.length > 0 ? dim(' → ') + parts.join(dim(' → ')) : ''
 }
 
 export function formatTree(opts: TreeFormatOptions): string {
@@ -155,26 +164,27 @@ export function formatTree(opts: TreeFormatOptions): string {
     totalSamples > 0
       ? (((totalSamples - nonIdleSamples) / totalSamples) * 100).toFixed(1)
       : '0.0'
-  lines.push(`Duration: ${durationSeconds.toFixed(2)}s`)
+  lines.push(`Duration: ${bold(durationSeconds.toFixed(2) + 's')}`)
   lines.push(
-    `Samples:  ${nonIdleSamples} active / ${totalSamples} total (${idlePct}% idle)`,
+    `Samples:  ${bold(String(nonIdleSamples))} active / ${String(totalSamples)} total (${dim(idlePct + '% idle')})`,
   )
   lines.push('')
 
   function renderNode(node: TreeNode, prefix: string, isLast: boolean, depth: number) {
     // Build the connector: root has no prefix, children get tree lines
-    const connector = depth === 0 ? '' : isLast ? '└── ' : '├── '
+    const connector = depth === 0 ? '' : dim(isLast ? '└── ' : '├── ')
     const pctStr = node.totalPercent.toFixed(1).padStart(5)
     const timeStr = formatMs(node.totalMs)
+    const badge = `${dim('[')}${colorPercent(pctStr + '%', node.totalPercent)} ${cyan(timeStr)}${dim(']')}`
     const loc =
       node.url || node.lineNumber >= 0
-        ? '  ' + shortenPath(node.url) + (node.lineNumber >= 0 ? ':' + node.lineNumber : '')
+        ? '  ' + dim(shortenPath(node.url) + (node.lineNumber >= 0 ? ':' + node.lineNumber : ''))
         : ''
 
     // Check if children are pruned by minPercent — if so, show collapsed chain
     const collapsed = minPercent > 0 ? collapseChain(node, minPercent) : ''
 
-    lines.push(`${prefix}${connector}[${pctStr}% ${timeStr}] ${node.functionName}${collapsed}${loc}`)
+    lines.push(`${prefix}${connector}${badge} ${bold(node.functionName)}${collapsed}${loc}`)
 
     // Stop recursing if at maxDepth
     if (maxDepth !== undefined && depth >= maxDepth) return
@@ -182,7 +192,7 @@ export function formatTree(opts: TreeFormatOptions): string {
     // Filter children by minPercent
     const visibleChildren = node.children.filter((c) => c.totalPercent >= minPercent)
 
-    const childPrefix = depth === 0 ? '' : prefix + (isLast ? '    ' : '│   ')
+    const childPrefix = depth === 0 ? '' : prefix + (isLast ? '    ' : dim('│') + '   ')
     for (let i = 0; i < visibleChildren.length; i++) {
       const child = visibleChildren[i]!
       const childIsLast = i === visibleChildren.length - 1
