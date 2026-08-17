@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.2.0
+
+1. **Chrome Performance traces work with no convert step** — the Performance panel **Save profile** button writes Chromium trace JSON (`Trace-*.json`), not a V8 `.cpuprofile`. Pass that file to profano the same way you pass a CPU profile:
+
+   ```bash
+   # expensive callers first: the click or handler that owns the time
+   profano ~/Downloads/Trace-20260817T115835.json --sort total
+
+   # hot leaves: the inner functions that burned the CPU
+   profano ~/Downloads/Trace-20260817T115835.json
+   ```
+
+   Profano extracts `Profile` / `ProfileChunk` / `CpuProfile` samples, prefers the page main thread (`CrRendererMain`), and keeps time monotonic when Chrome emits negative deltas.
+
+2. **New `profano tree` command** — print a hierarchical flamegraph-style call tree instead of the flat table. Unlike the table, the tree keeps call-site context so you can see where a function was invoked:
+
+   ```bash
+   profano tree profile.cpuprofile
+   profano tree profile.cpuprofile --min-percent 5
+   profano tree profile.cpuprofile --max-depth 4
+   profano tree profile.cpuprofile --focus handleRequest
+   ```
+
+   `--min-percent` hides quiet nodes and collapses the heaviest remaining path into a `→` chain. `--max-depth` defaults to 10. `--focus` zooms into one function's subtree.
+
+3. **Printed source lines are 1-based** — editors and humans use 1-based lines. Protocol values stay 0-based internally.
+
+4. **Heat colors on the table and tree** — hotter functions render in stronger colors so the expensive path is visible at a glance.
+
 ## 0.1.0
 
 1. **New `Self ms` and `Total ms` columns** — the table now shows real millisecond timings for every function, computed by summing `timeDeltas` from the `.cpuprofile` file. No more guessing from sample counts:
