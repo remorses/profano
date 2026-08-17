@@ -403,12 +403,12 @@ describe('formatTree', () => {
       Samples:  10 active / 10 total (0.0% idle)
 
       [100.0% 10.00s] (all)
-      └[100.0% 10.00s] main src/index.ts:1
-       ├[ 70.0% 7.00s] handleRequest src/server.ts:10
-       │├[ 50.0% 5.00s] dbQuery src/db.ts:20
-       ││└[ 50.0% 5.00s] pgExecute node_modules/pg/client.ts:89
-       │└[ 20.0% 2.00s] serialize src/format.ts:30
-       └[ 30.0% 3.00s] authCheck src/auth.ts:40
+      └[100.0% 10.00s] main src/index.ts:2
+       ├[ 70.0% 7.00s] handleRequest src/server.ts:11
+       │├[ 50.0% 5.00s] dbQuery src/db.ts:21
+       ││└[ 50.0% 5.00s] pgExecute node_modules/pg/client.ts:90
+       │└[ 20.0% 2.00s] serialize src/format.ts:31
+       └[ 30.0% 3.00s] authCheck src/auth.ts:41
         └[ 30.0% 3.00s] cryptoVerify"
     `)
   })
@@ -421,11 +421,11 @@ describe('formatTree', () => {
       Samples:  10 active / 10 total (0.0% idle)
 
       [100.0% 10.00s] (all)
-      └[100.0% 10.00s] main src/index.ts:1
-       ├[ 70.0% 7.00s] handleRequest src/server.ts:10
-       │└[ 50.0% 5.00s] dbQuery src/db.ts:20
-       │ └[ 50.0% 5.00s] pgExecute node_modules/pg/client.ts:89
-       └[ 30.0% 3.00s] authCheck src/auth.ts:40
+      └[100.0% 10.00s] main src/index.ts:2
+       ├[ 70.0% 7.00s] handleRequest src/server.ts:11
+       │└[ 50.0% 5.00s] dbQuery src/db.ts:21
+       │ └[ 50.0% 5.00s] pgExecute node_modules/pg/client.ts:90
+       └[ 30.0% 3.00s] authCheck src/auth.ts:41
         └[ 30.0% 3.00s] cryptoVerify"
     `)
   })
@@ -438,9 +438,9 @@ describe('formatTree', () => {
       Samples:  10 active / 10 total (0.0% idle)
 
       [100.0% 10.00s] (all)
-      └[100.0% 10.00s] main src/index.ts:1
-       ├[ 70.0% 7.00s] handleRequest src/server.ts:10
-       └[ 30.0% 3.00s] authCheck src/auth.ts:40"
+      └[100.0% 10.00s] main src/index.ts:2
+       ├[ 70.0% 7.00s] handleRequest src/server.ts:11
+       └[ 30.0% 3.00s] authCheck src/auth.ts:41"
     `)
   })
 
@@ -451,10 +451,10 @@ describe('formatTree', () => {
       "Duration: 10.00s
       Samples:  10 active / 10 total (0.0% idle)
 
-      [ 70.0% 7.00s] handleRequest src/server.ts:10
-      ├[ 50.0% 5.00s] dbQuery src/db.ts:20
-      │└[ 50.0% 5.00s] pgExecute node_modules/pg/client.ts:89
-      └[ 20.0% 2.00s] serialize src/format.ts:30"
+      [ 70.0% 7.00s] handleRequest src/server.ts:11
+      ├[ 50.0% 5.00s] dbQuery src/db.ts:21
+      │└[ 50.0% 5.00s] pgExecute node_modules/pg/client.ts:90
+      └[ 20.0% 2.00s] serialize src/format.ts:31"
     `)
   })
 
@@ -472,11 +472,11 @@ describe('formatTree', () => {
       Samples:  10 active / 10 total (0.0% idle)
 
       [100.0% 10.00s] (all)
-      └[100.0% 10.00s] main src/index.ts:1
-       ├[ 70.0% 7.00s] handleRequest src/server.ts:10
-       │├[ 50.0% 5.00s] dbQuery src/db.ts:20
-       │└[ 20.0% 2.00s] serialize src/format.ts:30
-       └[ 30.0% 3.00s] authCheck src/auth.ts:40
+      └[100.0% 10.00s] main src/index.ts:2
+       ├[ 70.0% 7.00s] handleRequest src/server.ts:11
+       │├[ 50.0% 5.00s] dbQuery src/db.ts:21
+       │└[ 20.0% 2.00s] serialize src/format.ts:31
+       └[ 30.0% 3.00s] authCheck src/auth.ts:41
         └[ 30.0% 3.00s] cryptoVerify"
     `)
   })
@@ -606,23 +606,23 @@ describe('real-world cpuprofile tree', () => {
       Samples:  2150 active / 2316 total (7.2% idle)
 
       [100.0% 2.33s] (all)
-      ├[ 49.3% 1.15s] resolveConfig nm/vite/dist/node/chunks/node.js:34002
-      │└[ 49.0% 1.14s] (anonymous) nm/vite/dist/node/chunks/node.js:34311
-      │ └[ 49.0% 1.14s] configResolved dist/vite-plugin.js:134
-      │  └[ 48.9% 1.14s] syncNavigation lib/sync.js:74
-      ├[ 18.0% 419.3ms] enrichPage lib/sync.js:93
-      │└[ 11.3% 263.3ms] collectMdxIconRefs lib/mdx-processor.js:43
-      │ ├[  5.9% 137.2ms] normalizeMdx → parse [3.1%] → parser [3.1%] → write [1.3%] → main [1.2%] → go [1.2%] → flowContinue [0.8%] → writeToChild [0.7%] → write [0.7%] → main [0.7%] → go [0.7%] → inside [0.1%] → before [0.1%] → mdxExpressionParse [0.1%] → eventsToAcorn [0.1%] → parseExpressionAt [0.1%] → pp.nextToken [0.1%] → readToken [0.1%] → pp.getTokenFromCode [0.1%] → pp.readNumber [0.1%] → pp.fullCharCodeAtPos [0.1%] mintlify/normalize-mdx.js:12
-      │ └[  5.1% 118.9ms] mdxParse nm/safe-mdx/dist/parse.js:8
-      │  └[  5.1% 118.9ms] processSync nm/unified/lib/index.js:808
-      ├[ 16.3% 379.6ms] run esm/module_job:418
+      ├[ 49.3% 1.15s] resolveConfig nm/vite/dist/node/chunks/node.js:34003
+      │└[ 49.0% 1.14s] (anonymous) nm/vite/dist/node/chunks/node.js:34312
+      │ └[ 49.0% 1.14s] configResolved dist/vite-plugin.js:135
+      │  └[ 48.9% 1.14s] syncNavigation lib/sync.js:75
+      ├[ 18.0% 419.3ms] enrichPage lib/sync.js:94
+      │└[ 11.3% 263.3ms] collectMdxIconRefs lib/mdx-processor.js:44
+      │ ├[  5.9% 137.2ms] normalizeMdx → parse [3.1%] → parser [3.1%] → write [1.3%] → main [1.2%] → go [1.2%] → flowContinue [0.8%] → writeToChild [0.7%] → write [0.7%] → main [0.7%] → go [0.7%] → inside [0.1%] → before [0.1%] → mdxExpressionParse [0.1%] → eventsToAcorn [0.1%] → parseExpressionAt [0.1%] → pp.nextToken [0.1%] → readToken [0.1%] → pp.getTokenFromCode [0.1%] → pp.readNumber [0.1%] → pp.fullCharCodeAtPos [0.1%] mintlify/normalize-mdx.js:13
+      │ └[  5.1% 118.9ms] mdxParse nm/safe-mdx/dist/parse.js:9
+      │  └[  5.1% 118.9ms] processSync nm/unified/lib/index.js:809
+      ├[ 16.3% 379.6ms] run esm/module_job:419
       │└[ 16.2% 377.0ms] evaluate
-      │ └[  8.6% 199.6ms] (anonymous) esm/translators:228
-      │  └[  8.6% 199.6ms] loadCJSModuleWithModuleLoad esm/translators:323
-      └[ 13.9% 323.5ms] loadConfigFromBundledFile nm/vite/dist/node/chunks/node.js:34562
-       └[ 13.9% 323.5ms] importModuleDynamicallyCallback esm/utils:251
-        └[ 13.9% 323.5ms] defaultImportModuleDynamicallyForModule esm/utils:222
-         └[ 13.9% 323.5ms] import esm/loader:644"
+      │ └[  8.6% 199.6ms] (anonymous) esm/translators:229
+      │  └[  8.6% 199.6ms] loadCJSModuleWithModuleLoad esm/translators:324
+      └[ 13.9% 323.5ms] loadConfigFromBundledFile nm/vite/dist/node/chunks/node.js:34563
+       └[ 13.9% 323.5ms] importModuleDynamicallyCallback esm/utils:252
+        └[ 13.9% 323.5ms] defaultImportModuleDynamicallyForModule esm/utils:223
+         └[ 13.9% 323.5ms] import esm/loader:645"
     `)
   })
 
@@ -634,45 +634,45 @@ describe('real-world cpuprofile tree', () => {
       "Duration: 2.54s
       Samples:  2150 active / 2316 total (7.2% idle)
 
-      [ 18.0% 419.3ms] enrichPage lib/sync.js:93
-      ├[ 11.3% 263.3ms] collectMdxIconRefs lib/mdx-processor.js:43
-      │├[  5.9% 137.2ms] normalizeMdx mintlify/normalize-mdx.js:12
-      ││├[  3.1% 72.5ms] parse nm/unified/lib/index.js:662
-      ││├[  1.2% 28.9ms] toMarkdown nm/mdast-util-to-markdown/lib/index.js:29
-      ││├[  1.2% 28.6ms] parser nm/remark-parse/lib/index.js:31
-      ││├[  0.1% 2.5ms] runSync nm/unified/lib/index.js:943
-      ││├[  0.1% 2.5ms] executor nm/unified/lib/index.js:894
-      ││└[  0.1% 2.2ms] apply nm/unified/lib/callable-instance.js:22
-      │├[  5.1% 118.9ms] mdxParse nm/safe-mdx/dist/parse.js:8
-      ││└[  5.1% 118.9ms] processSync nm/unified/lib/index.js:808
-      │└[  0.3% 7.2ms] parsePageFrontmatter lib/page-frontmatter.js:46
-      │ ├[  0.3% 6.0ms] parseFrontmatterObject lib/frontmatter.js:73
-      │ └[  0.1% 1.3ms] inst.safeParse nm/zod/v4/classic/schemas.js:39
-      ├[  4.5% 105.9ms] processImage lib/image-processor.js:47
-      │├[  2.7% 62.3ms] processImageBuffer lib/image-processor.js:53
-      ││├[  2.4% 55.3ms] importModuleDynamicallyCallback esm/utils:251
-      ││└[  0.3% 5.9ms] gitBlobSha lib/image-processor.js:85
-      │└[  1.9% 43.5ms] readFileSync node:fs:432
-      │ ├[  1.6% 37.5ms] tryReadSync node:fs:411
-      │ ├[  0.2% 3.5ms] openSync node:fs:558
-      │ └[  0.1% 2.5ms] n nm/graceful-fs/graceful-fs.js:1
-      ├[  1.2% 28.1ms] rewriteMdxImages lib/mdx-processor.js:131
-      │├[  1.2% 26.9ms] toMarkdown nm/mdast-util-to-markdown/lib/index.js:29
-      ││└[  1.2% 26.9ms] one nm/zwitch/index.js:94
-      │└[  0.1% 1.3ms] (anonymous) lib/mdx-processor.js:133
-      │ └[  0.1% 1.3ms] rewriteNode lib/mdx-processor.js:148
-      ├[  0.8% 18.3ms] copyToPublic lib/sync.js:252
-      │├[  0.4% 8.5ms] update node:internal/crypto/hash:133
-      │├[  0.2% 3.9ms] readFileSync node:fs:432
-      ││├[  0.1% 1.3ms] openSync node:fs:558
-      ││├[  0.1% 1.3ms] n nm/graceful-fs/graceful-fs.js:1
-      ││└[  0.1% 1.3ms] tryReadSync node:fs:411
-      │├[  0.1% 2.5ms] createHash node:crypto:143
-      ││└[  0.1% 2.5ms] Hash node:internal/crypto/hash:89
-      │├[  0.1% 1.3ms] extname node:path:1550
-      │└[  0.0% 0.75ms] basename node:path:1471
-      └[  0.2% 3.7ms] resolveImagePath lib/sync.js:215
-       └[  0.2% 3.7ms] existsSync node:fs:276
+      [ 18.0% 419.3ms] enrichPage lib/sync.js:94
+      ├[ 11.3% 263.3ms] collectMdxIconRefs lib/mdx-processor.js:44
+      │├[  5.9% 137.2ms] normalizeMdx mintlify/normalize-mdx.js:13
+      ││├[  3.1% 72.5ms] parse nm/unified/lib/index.js:663
+      ││├[  1.2% 28.9ms] toMarkdown nm/mdast-util-to-markdown/lib/index.js:30
+      ││├[  1.2% 28.6ms] parser nm/remark-parse/lib/index.js:32
+      ││├[  0.1% 2.5ms] runSync nm/unified/lib/index.js:944
+      ││├[  0.1% 2.5ms] executor nm/unified/lib/index.js:895
+      ││└[  0.1% 2.2ms] apply nm/unified/lib/callable-instance.js:23
+      │├[  5.1% 118.9ms] mdxParse nm/safe-mdx/dist/parse.js:9
+      ││└[  5.1% 118.9ms] processSync nm/unified/lib/index.js:809
+      │└[  0.3% 7.2ms] parsePageFrontmatter lib/page-frontmatter.js:47
+      │ ├[  0.3% 6.0ms] parseFrontmatterObject lib/frontmatter.js:74
+      │ └[  0.1% 1.3ms] inst.safeParse nm/zod/v4/classic/schemas.js:40
+      ├[  4.5% 105.9ms] processImage lib/image-processor.js:48
+      │├[  2.7% 62.3ms] processImageBuffer lib/image-processor.js:54
+      ││├[  2.4% 55.3ms] importModuleDynamicallyCallback esm/utils:252
+      ││└[  0.3% 5.9ms] gitBlobSha lib/image-processor.js:86
+      │└[  1.9% 43.5ms] readFileSync node:fs:433
+      │ ├[  1.6% 37.5ms] tryReadSync node:fs:412
+      │ ├[  0.2% 3.5ms] openSync node:fs:559
+      │ └[  0.1% 2.5ms] n nm/graceful-fs/graceful-fs.js:2
+      ├[  1.2% 28.1ms] rewriteMdxImages lib/mdx-processor.js:132
+      │├[  1.2% 26.9ms] toMarkdown nm/mdast-util-to-markdown/lib/index.js:30
+      ││└[  1.2% 26.9ms] one nm/zwitch/index.js:95
+      │└[  0.1% 1.3ms] (anonymous) lib/mdx-processor.js:134
+      │ └[  0.1% 1.3ms] rewriteNode lib/mdx-processor.js:149
+      ├[  0.8% 18.3ms] copyToPublic lib/sync.js:253
+      │├[  0.4% 8.5ms] update node:internal/crypto/hash:134
+      │├[  0.2% 3.9ms] readFileSync node:fs:433
+      ││├[  0.1% 1.3ms] openSync node:fs:559
+      ││├[  0.1% 1.3ms] n nm/graceful-fs/graceful-fs.js:2
+      ││└[  0.1% 1.3ms] tryReadSync node:fs:412
+      │├[  0.1% 2.5ms] createHash node:crypto:144
+      ││└[  0.1% 2.5ms] Hash node:internal/crypto/hash:90
+      │├[  0.1% 1.3ms] extname node:path:1551
+      │└[  0.0% 0.75ms] basename node:path:1472
+      └[  0.2% 3.7ms] resolveImagePath lib/sync.js:216
+       └[  0.2% 3.7ms] existsSync node:fs:277
         └[  0.2% 3.7ms] existsSync"
     `)
   })
@@ -760,5 +760,97 @@ describe('cpuProfileFromChromeTrace', () => {
     expect(() => {
       cpuProfileFromChromeTrace({ traceEvents: [{ name: 'RunTask' }] })
     }).toThrow(/No JS CPU samples/)
+  })
+
+  it('reads timing from a nested one-shot CpuProfile', () => {
+    const profile = cpuProfileFromChromeTrace({
+      traceEvents: [
+        {
+          name: 'CpuProfile',
+          id: '0x1',
+          args: {
+            data: {
+              cpuProfile: {
+                nodes: [
+                  { id: 1, callFrame: { functionName: '(root)', scriptId: 0 } },
+                  { id: 2, parent: 1, callFrame: { functionName: 'work', scriptId: 1 } },
+                ],
+                samples: [2, 2],
+                timeDeltas: [1000, 2000],
+                startTime: 10,
+                endTime: 3010,
+              },
+            },
+          },
+        },
+      ],
+    })
+    expect(profile.startTime).toBe(10)
+    expect(profile.endTime).toBe(3010)
+    expect(profile.timeDeltas).toEqual([1000, 2000])
+    expect(analyze(profile).durationSeconds).toBe(0.003)
+  })
+
+  it('does not merge same profile id from different pids', () => {
+    const profile = cpuProfileFromChromeTrace({
+      traceEvents: [
+        { name: 'Profile', id: '0x1', pid: 1, args: { data: { startTime: 0 } } },
+        { ...makeTrace({ id: '0x1', samples: [3] }), pid: 1 },
+        { name: 'Profile', id: '0x1', pid: 2, args: { data: { startTime: 0 } } },
+        { ...makeTrace({ id: '0x1', samples: [3, 3, 3] }), pid: 2 },
+      ],
+    })
+    expect(profile.samples).toHaveLength(3)
+  })
+
+  it('sorts chunks by ts before joining samples', () => {
+    const profile = cpuProfileFromChromeTrace({
+      traceEvents: [
+        { name: 'Profile', id: '0x1', ts: 0, args: { data: { startTime: 0 } } },
+        { ...makeTrace({ id: '0x1', samples: [2] }), ts: 20 },
+        { ...makeTrace({ id: '0x1', samples: [3] }), ts: 10 },
+      ],
+    })
+    expect(profile.samples).toEqual([3, 2])
+  })
+
+  it('keeps cumulative time monotonic across a negative delta', () => {
+    const profile = cpuProfileFromChromeTrace({
+      traceEvents: [
+        {
+          name: 'CpuProfile',
+          id: '0x1',
+          args: {
+            data: {
+              cpuProfile: {
+                nodes: [
+                  { id: 1, callFrame: { functionName: '(root)', scriptId: 0 } },
+                  { id: 2, parent: 1, callFrame: { functionName: 'work', scriptId: 1 } },
+                ],
+                samples: [2, 2, 2],
+                timeDeltas: [1000, -200, 400],
+                startTime: 0,
+              },
+            },
+          },
+        },
+      ],
+    })
+    expect(profile.timeDeltas).toEqual([1000, 0, 200])
+    expect(analyze(profile).functions[0]?.selfMs).toBe(1.2)
+  })
+
+  it('prefers CrRendererMain over a busier worker', () => {
+    const profile = cpuProfileFromChromeTrace({
+      traceEvents: [
+        { name: 'thread_name', pid: 1, tid: 1, args: { name: 'CrRendererMain' } },
+        { name: 'thread_name', pid: 1, tid: 2, args: { name: 'Worker' } },
+        { name: 'Profile', id: 'main', pid: 1, tid: 1, args: { data: { startTime: 0 } } },
+        { ...makeTrace({ id: 'main', samples: [3] }), pid: 1, tid: 1 },
+        { name: 'Profile', id: 'work', pid: 1, tid: 2, args: { data: { startTime: 0 } } },
+        { ...makeTrace({ id: 'work', samples: [3, 3, 3, 3] }), pid: 1, tid: 2 },
+      ],
+    })
+    expect(profile.samples).toHaveLength(1)
   })
 })

@@ -125,7 +125,9 @@ export interface ChromeTraceEvent {
   id?: string | number
   pid?: number
   tid?: number
+  ts?: number
   args?: {
+    name?: string
     data?: {
       id?: string | number
       startTime?: number
@@ -134,6 +136,9 @@ export interface ChromeTraceEvent {
       cpuProfile?: {
         nodes?: ChromeTraceNode[]
         samples?: number[]
+        timeDeltas?: number[]
+        startTime?: number
+        endTime?: number
       }
     }
   }
@@ -142,6 +147,8 @@ export interface ChromeTraceEvent {
 interface AccumulatedProfile {
   startTime: number
   endTime: number
+  pid?: number
+  tid?: number
   nodes: Map<number, ChromeTraceNode>
   samples: number[]
   timeDeltas: number[]
@@ -157,14 +164,32 @@ function traceEventsFromInput(raw: ChromeTraceInput): ChromeTraceEvent[] {
 }
 
 function profileKey(event: ChromeTraceEvent): string {
+  const pid = event.pid ?? 0
   if (event.id !== undefined) {
-    return String(event.id)
+    return `${pid}:${event.id}`
   }
   const nestedId = event.args?.data?.id
   if (nestedId !== undefined) {
-    return String(nestedId)
+    return `${pid}:${nestedId}`
   }
-  return `${event.pid ?? 0}:${event.tid ?? 0}`
+  return `${pid}:${event.tid ?? 0}`
+}
+
+// Chrome traces can contain negative timeDeltas. Keep cumulative time
+// monotonic so a later positive delta can compensate, instead of clamping
+// each delta to 0 and losing that compensation.
+function monotonicDeltas(deltas: number[]): number[] {
+  let elapsed = 0
+  let last = 0
+  return deltas.map((delta) => {
+    elapsed += delta
+    if (elapsed < last) {
+      return 0
+    }
+    const out = elapsed - last
+    last = elapsed
+    return out
+  })
 }
 
 function accumulatedToCpuProfile(chosen: AccumulatedProfile): CpuProfile {
@@ -185,10 +210,13 @@ function accumulatedToCpuProfile(chosen: AccumulatedProfile): CpuProfile {
     children.set(node.parent, list)
   }
 
+  const timeDeltas = monotonicDeltas(chosen.timeDeltas)
   const endTime =
-    chosen.endTime || chosen.startTime + chosen.timeDeltas.reduce((sum, delta) => {
-      return sum + delta
-    }, 0)
+    chosen.endTime ||
+    chosen.startTime +
+      timeDeltas.reduce((sum, delta) => {
+        return sum + delta
+      }, 0)
 
   return {
     nodes: [...chosen.nodes.values()]
@@ -212,23 +240,38 @@ function accumulatedToCpuProfile(chosen: AccumulatedProfile): CpuProfile {
     samples: chosen.samples,
     startTime: chosen.startTime,
     endTime,
-    timeDeltas: chosen.timeDeltas,
+    timeDeltas,
   }
 }
 
 /** Extract a V8 CpuProfile from a Chrome Performance trace (Save profile JSON). */
 export function cpuProfileFromChromeTrace(raw: ChromeTraceInput): CpuProfile {
-  const events = traceEventsFromInput(raw)
+  const events = [...traceEventsFromInput(raw)].sort((a, b) => {
+    return (a.ts ?? 0) - (b.ts ?? 0)
+  })
 
   const profiles = new Map<string, AccumulatedProfile>()
+  const threadName = new Map<string, string>()
   for (const event of events) {
+    if (event.name === 'thread_name' && event.args?.name) {
+      threadName.set(`${event.pid ?? 0}:${event.tid ?? 0}`, event.args.name)
+      continue
+    }
     if (event.name !== 'Profile' && event.name !== 'ProfileChunk' && event.name !== 'CpuProfile') {
       continue
     }
     const key = profileKey(event)
     let profile = profiles.get(key)
     if (!profile) {
-      profile = { startTime: 0, endTime: 0, nodes: new Map(), samples: [], timeDeltas: [] }
+      profile = {
+        startTime: 0,
+        endTime: 0,
+        pid: event.pid,
+        tid: event.tid,
+        nodes: new Map(),
+        samples: [],
+        timeDeltas: [],
+      }
       profiles.set(key, profile)
     }
     const data = event.args?.data
@@ -239,26 +282,18 @@ export function cpuProfileFromChromeTrace(raw: ChromeTraceInput): CpuProfile {
       profile.startTime = data.startTime ?? profile.startTime
       continue
     }
-    if (event.name === 'CpuProfile' && data.cpuProfile) {
-      for (const node of data.cpuProfile.nodes ?? []) {
-        profile.nodes.set(node.id, node)
-      }
-      profile.samples.push(...(data.cpuProfile.samples ?? []))
-      profile.timeDeltas.push(...(data.timeDeltas ?? []))
-      if (data.startTime !== undefined) {
-        profile.startTime = data.startTime
-      }
-      if (data.endTime !== undefined) {
-        profile.endTime = data.endTime
-      }
-      continue
-    }
+    // Older one-shot CpuProfile stores timing on the nested object.
+    // ProfileChunk stores timeDeltas on args.data next to cpuProfile.
     const cpu = data.cpuProfile
     if (cpu) {
       for (const node of cpu.nodes ?? []) {
         profile.nodes.set(node.id, node)
       }
       profile.samples.push(...(cpu.samples ?? []))
+      profile.timeDeltas.push(...(cpu.timeDeltas ?? data.timeDeltas ?? []))
+      profile.startTime = cpu.startTime ?? data.startTime ?? profile.startTime
+      profile.endTime = cpu.endTime ?? data.endTime ?? profile.endTime
+      continue
     }
     if (data.timeDeltas) {
       profile.timeDeltas.push(...data.timeDeltas)
@@ -271,10 +306,18 @@ export function cpuProfileFromChromeTrace(raw: ChromeTraceInput): CpuProfile {
     }
   }
 
-  const chosen = [...profiles.values()].sort((a, b) => {
-    return b.samples.length - a.samples.length
-  })[0]
-  if (!chosen || chosen.samples.length === 0) {
+  const withSamples = [...profiles.values()].filter((profile) => {
+    return profile.samples.length > 0
+  })
+  const main = withSamples.find((profile) => {
+    return threadName.get(`${profile.pid ?? 0}:${profile.tid ?? 0}`) === 'CrRendererMain'
+  })
+  const chosen =
+    main ||
+    withSamples.sort((a, b) => {
+      return b.samples.length - a.samples.length
+    })[0]
+  if (!chosen) {
     throw new Error(
       'No JS CPU samples in this Chrome Performance trace. Record again from the Performance panel (JS sampling is on by default).',
     )

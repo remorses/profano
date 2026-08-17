@@ -23,6 +23,14 @@ export function shortenPath(url: string): string {
   return url
 }
 
+// V8 / Chrome callFrame.lineNumber is 0-based. Editors and humans use 1-based.
+function displayLine(lineNumber: number): string {
+  if (lineNumber < 0) {
+    return ''
+  }
+  return ':' + (lineNumber + 1)
+}
+
 /** Format milliseconds for display: use ms for < 1000, seconds otherwise. */
 function formatMs(ms: number): string {
   if (ms >= 1000) {
@@ -78,7 +86,7 @@ export function formatTable(opts: {
     const totalPct = colorPercent(fn.totalActivePercent.toFixed(1).padStart(5) + '%', fn.totalActivePercent)
     const totalMs = cyan(formatMs(fn.totalMs).padStart(8))
     const name = bold(fn.functionName.padEnd(42).slice(0, 42))
-    const loc = dim(shortenPath(fn.url) + (fn.lineNumber >= 0 ? ':' + fn.lineNumber : ''))
+    const loc = dim(shortenPath(fn.url) + displayLine(fn.lineNumber))
     lines.push(`${self}  ${selfPct}  ${selfMs}  ${total}  ${totalPct}  ${totalMs}  ${name}  ${loc}`)
   }
 
@@ -183,7 +191,7 @@ export function formatTree(opts: TreeFormatOptions): string {
     const badge = `${dim('[')}${colorPercent(pctStr + '%', node.totalPercent)} ${colorPercent(timeStr, node.totalPercent)}${dim(']')}`
     const loc =
       node.url || node.lineNumber >= 0
-        ? ' ' + dim(shortenPath(node.url) + (node.lineNumber >= 0 ? ':' + node.lineNumber : ''))
+        ? ' ' + dim(shortenPath(node.url) + displayLine(node.lineNumber))
         : ''
 
     // Check if children are pruned by minPercent — if so, show collapsed chain
