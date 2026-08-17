@@ -18,11 +18,11 @@ const cli = goke('profano')
 cli
   .command(
     '[...files]',
-    `Analyze one or more V8 .cpuprofile files and print the top functions as a terminal table.
+    `Analyze one or more V8 .cpuprofile files or Chrome Performance traces and print the top functions as a terminal table.
 
 Reads each file, aggregates samples by function identity (name + url + line), drops idle / GC / program / root pseudo-frames, and renders a sortable table with Self and Total (inclusive) sample counts plus their percentage of active (non-idle) samples.
 
-Pass multiple files as separate positional args or a shell glob. profano will also expand globs internally if your shell didn't. Each file is analyzed independently and rendered as its own table; when more than one file is passed a header separator is printed between them.
+Chrome Performance "Save profile" JSON is accepted as-is: Profile/ProfileChunk events are extracted automatically. Pass multiple files as separate positional args or a shell glob. profano will also expand globs internally if your shell didn't. Each file is analyzed independently and rendered as its own table; when more than one file is passed a header separator is printed between them.
 
 Use --sort self to find CPU-bound leaves (hot inner functions) and --sort total to find expensive callers that dominate wall time.`,
   )
@@ -47,6 +47,8 @@ Use --sort self to find CPU-bound leaves (hot inner functions) and --sort total 
   .example('profano profile.cpuprofile -n 50')
   .example('# Analyze many profiles at once (each rendered as its own table)')
   .example('profano tmp/cpu-profiles/*.cpuprofile')
+  .example('# Chrome Performance Save profile (Trace-*.json) works with no convert step')
+  .example('profano ~/Downloads/Trace-20260817T115835.json --sort total')
   // NOTE: goke's .action() signature is (...args: any[]) so positional args
   // come back untyped. Option types are inferred from the schemas above and
   // must not be annotated. See goke skill rule 3.
@@ -61,7 +63,7 @@ Use --sort self to find CPU-bound leaves (hot inner functions) and --sort total 
     })
 
     if (resolved.length === 0) {
-      console.error('No .cpuprofile files passed. Run `profano --help` for usage.')
+      console.error('No profile files passed. Run `profano --help` for usage.')
       process.exit(1)
     }
 

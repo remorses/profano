@@ -1,6 +1,6 @@
 # profano
 
-CLI tool to analyze V8 `.cpuprofile` files and print the top functions by self-time or total-time directly in the terminal. Built for AI agents and humans who want quick profiling insights without opening Chrome DevTools.
+CLI tool to analyze V8 `.cpuprofile` files and Chrome Performance traces, and print the top functions by self-time or total-time directly in the terminal. Built for AI agents and humans who want quick profiling insights without opening Chrome DevTools.
 
 ## Install
 
@@ -32,6 +32,9 @@ profano ./tmp/cpu-profiles/CPU.*.cpuprofile
 
 # Sort by total/inclusive time instead
 profano profile.cpuprofile --sort total
+
+# Chrome Performance Save profile (no convert step)
+profano ~/Downloads/Trace-20260817T115835.json --sort total
 
 # Show the top 50 functions (default 30)
 profano profile.cpuprofile -n 50
@@ -152,9 +155,26 @@ Same signal rules apply as with Node: the profile is written on clean exit, `Ctr
 
 Bun also supports `--cpu-prof-name <filename>` for a fixed output name and `--cpu-prof-interval <microseconds>` to change the sampling rate (default 1000μs).
 
-### Chrome DevTools
+### Chrome Performance traces
 
-You can also record CPU profiles from Chrome DevTools (Performance tab → Record → stop → "Save profile…") and feed the exported `.cpuprofile` file to profano.
+The Performance panel **Save profile** button writes a Chromium **trace JSON** (`Trace-YYYYMMDDTHHMMSS.json`), not a `.cpuprofile`. Pass that file to profano directly. The `Profile` / `ProfileChunk` samples are extracted automatically.
+
+1. Open the slow page and DevTools (**Cmd+Option+I** / **Ctrl+Shift+I**)
+2. Open the **Performance** panel
+3. Click **Record** (circle) or press **Cmd+E** / **Ctrl+E**
+4. Reproduce the slowness
+5. Click **Stop**, then the **down-arrow** (or right-click → **Save profile…**)
+6. Analyze:
+
+```bash
+# expensive callers first: the click or handler that owns the time
+profano ~/Downloads/Trace-20260817T115835.json --sort total -n 40
+
+# hot leaves: the inner functions that burned the CPU
+profano ~/Downloads/Trace-20260817T115835.json
+```
+
+If the page ran injected scripts (Playwright recorder, React DevTools, other extensions), those frames often have empty URLs and bundled line numbers. The function names are still enough to find the hot path.
 
 ### Browser pages via playwriter
 

@@ -5,6 +5,10 @@
 //   startTime / endTime: microseconds
 //   timeDeltas: array of microsecond deltas between samples
 //
+// Chrome Performance "Save profile" writes a trace JSON ({ metadata, traceEvents })
+// instead. loadProfile() detects that and extracts Profile/ProfileChunk events
+// into the same CpuProfile shape. No separate convert step.
+//
 // Why function identity matters: V8 creates a SEPARATE tree node per distinct
 // call site, so a recursive or hot function appears as many profiler nodes
 // with identical callFrames. Without identity-based dedup the same function
@@ -101,9 +105,208 @@ interface IdentityMeta {
   columnNumber: number
 }
 
+interface ChromeTraceCallFrame {
+  functionName?: string
+  url?: string
+  scriptId?: string | number
+  lineNumber?: number
+  columnNumber?: number
+}
+
+interface ChromeTraceNode {
+  id: number
+  parent?: number
+  children?: number[]
+  callFrame?: ChromeTraceCallFrame
+}
+
+export interface ChromeTraceEvent {
+  name?: string
+  id?: string | number
+  pid?: number
+  tid?: number
+  args?: {
+    data?: {
+      id?: string | number
+      startTime?: number
+      endTime?: number
+      timeDeltas?: number[]
+      cpuProfile?: {
+        nodes?: ChromeTraceNode[]
+        samples?: number[]
+      }
+    }
+  }
+}
+
+interface AccumulatedProfile {
+  startTime: number
+  endTime: number
+  nodes: Map<number, ChromeTraceNode>
+  samples: number[]
+  timeDeltas: number[]
+}
+
+export type ChromeTraceInput = { traceEvents: ChromeTraceEvent[] } | ChromeTraceEvent[]
+
+function traceEventsFromInput(raw: ChromeTraceInput): ChromeTraceEvent[] {
+  if (Array.isArray(raw)) {
+    return raw
+  }
+  return raw.traceEvents
+}
+
+function profileKey(event: ChromeTraceEvent): string {
+  if (event.id !== undefined) {
+    return String(event.id)
+  }
+  const nestedId = event.args?.data?.id
+  if (nestedId !== undefined) {
+    return String(nestedId)
+  }
+  return `${event.pid ?? 0}:${event.tid ?? 0}`
+}
+
+function accumulatedToCpuProfile(chosen: AccumulatedProfile): CpuProfile {
+  const children = new Map<number, number[]>()
+  for (const node of chosen.nodes.values()) {
+    if (node.children) {
+      children.set(node.id, [...node.children])
+    }
+  }
+  for (const node of chosen.nodes.values()) {
+    if (node.parent === undefined) {
+      continue
+    }
+    const list = children.get(node.parent) ?? []
+    if (!list.includes(node.id)) {
+      list.push(node.id)
+    }
+    children.set(node.parent, list)
+  }
+
+  const endTime =
+    chosen.endTime || chosen.startTime + chosen.timeDeltas.reduce((sum, delta) => {
+      return sum + delta
+    }, 0)
+
+  return {
+    nodes: [...chosen.nodes.values()]
+      .sort((a, b) => {
+        return a.id - b.id
+      })
+      .map((node) => {
+        const frame = node.callFrame ?? {}
+        return {
+          id: node.id,
+          callFrame: {
+            functionName: frame.functionName ?? '',
+            url: frame.url ?? '',
+            scriptId: String(frame.scriptId ?? 0),
+            lineNumber: frame.lineNumber ?? 0,
+            columnNumber: frame.columnNumber ?? 0,
+          },
+          children: children.get(node.id) ?? [],
+        }
+      }),
+    samples: chosen.samples,
+    startTime: chosen.startTime,
+    endTime,
+    timeDeltas: chosen.timeDeltas,
+  }
+}
+
+/** Extract a V8 CpuProfile from a Chrome Performance trace (Save profile JSON). */
+export function cpuProfileFromChromeTrace(raw: ChromeTraceInput): CpuProfile {
+  const events = traceEventsFromInput(raw)
+
+  const profiles = new Map<string, AccumulatedProfile>()
+  for (const event of events) {
+    if (event.name !== 'Profile' && event.name !== 'ProfileChunk' && event.name !== 'CpuProfile') {
+      continue
+    }
+    const key = profileKey(event)
+    let profile = profiles.get(key)
+    if (!profile) {
+      profile = { startTime: 0, endTime: 0, nodes: new Map(), samples: [], timeDeltas: [] }
+      profiles.set(key, profile)
+    }
+    const data = event.args?.data
+    if (!data) {
+      continue
+    }
+    if (event.name === 'Profile') {
+      profile.startTime = data.startTime ?? profile.startTime
+      continue
+    }
+    if (event.name === 'CpuProfile' && data.cpuProfile) {
+      for (const node of data.cpuProfile.nodes ?? []) {
+        profile.nodes.set(node.id, node)
+      }
+      profile.samples.push(...(data.cpuProfile.samples ?? []))
+      profile.timeDeltas.push(...(data.timeDeltas ?? []))
+      if (data.startTime !== undefined) {
+        profile.startTime = data.startTime
+      }
+      if (data.endTime !== undefined) {
+        profile.endTime = data.endTime
+      }
+      continue
+    }
+    const cpu = data.cpuProfile
+    if (cpu) {
+      for (const node of cpu.nodes ?? []) {
+        profile.nodes.set(node.id, node)
+      }
+      profile.samples.push(...(cpu.samples ?? []))
+    }
+    if (data.timeDeltas) {
+      profile.timeDeltas.push(...data.timeDeltas)
+    }
+    if (data.startTime !== undefined) {
+      profile.startTime = data.startTime
+    }
+    if (data.endTime !== undefined) {
+      profile.endTime = data.endTime
+    }
+  }
+
+  const chosen = [...profiles.values()].sort((a, b) => {
+    return b.samples.length - a.samples.length
+  })[0]
+  if (!chosen || chosen.samples.length === 0) {
+    throw new Error(
+      'No JS CPU samples in this Chrome Performance trace. Record again from the Performance panel (JS sampling is on by default).',
+    )
+  }
+  return accumulatedToCpuProfile(chosen)
+}
+
 export function loadProfile(filePath: string): CpuProfile {
-  const raw = fs.readFileSync(filePath, 'utf8')
-  return JSON.parse(raw) as CpuProfile
+  const parsed: {
+    nodes?: ProfileNode[]
+    samples?: number[]
+    startTime?: number
+    endTime?: number
+    timeDeltas?: number[]
+    traceEvents?: ChromeTraceEvent[]
+  } | ChromeTraceEvent[] = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+  if (Array.isArray(parsed)) {
+    return cpuProfileFromChromeTrace(parsed)
+  }
+  if (parsed.traceEvents) {
+    return cpuProfileFromChromeTrace({ traceEvents: parsed.traceEvents })
+  }
+  if (!parsed.nodes || !parsed.samples || parsed.startTime === undefined || parsed.endTime === undefined) {
+    throw new Error(`${filePath} is not a V8 .cpuprofile or Chrome Performance trace`)
+  }
+  return {
+    nodes: parsed.nodes,
+    samples: parsed.samples,
+    startTime: parsed.startTime,
+    endTime: parsed.endTime,
+    timeDeltas: parsed.timeDeltas,
+  }
 }
 
 export function analyze(profile: CpuProfile): {

@@ -17,7 +17,7 @@
 //   JSON.stringify + a side metadata map instead of delimiter parsing.
 
 import { describe, it, expect } from 'vitest'
-import { analyze, buildTree, loadProfile, type CpuProfile } from './parse.ts'
+import { analyze, buildTree, cpuProfileFromChromeTrace, loadProfile, type CpuProfile } from './parse.ts'
 import { formatTree } from './format.ts'
 import { join } from 'node:path'
 
@@ -675,5 +675,90 @@ describe('real-world cpuprofile tree', () => {
        └[  0.2% 3.7ms] existsSync node:fs:276
         └[  0.2% 3.7ms] existsSync"
     `)
+  })
+})
+
+describe('cpuProfileFromChromeTrace', () => {
+  const makeTrace = ({ id, samples }: { id: string; samples: number[] }) => {
+    return {
+      name: 'ProfileChunk' as const,
+      id,
+      args: {
+        data: {
+          timeDeltas: samples.map(() => {
+            return 1000
+          }),
+          cpuProfile: {
+            nodes: [
+              { id: 1, callFrame: { functionName: '(root)', scriptId: 0 } },
+              {
+                id: 2,
+                parent: 1,
+                callFrame: { functionName: 'onClick', scriptId: 1, url: 'app.js', lineNumber: 10, columnNumber: 0 },
+              },
+              {
+                id: 3,
+                parent: 2,
+                callFrame: {
+                  functionName: 'generateAriaTree',
+                  scriptId: 1,
+                  url: 'app.js',
+                  lineNumber: 20,
+                  columnNumber: 0,
+                },
+              },
+            ],
+            samples,
+          },
+        },
+      },
+    }
+  }
+
+  it('builds parent/child links and is analyzable', () => {
+    const profile = cpuProfileFromChromeTrace({
+      traceEvents: [
+        { name: 'Profile', id: '0x1', args: { data: { startTime: 1000 } } },
+        makeTrace({ id: '0x1', samples: [3, 3, 3] }),
+      ],
+    })
+    expect(profile.startTime).toBe(1000)
+    expect(profile.samples).toEqual([3, 3, 3])
+    const root = profile.nodes.find((n) => {
+      return n.id === 1
+    })
+    expect(root?.children).toEqual([2])
+    const { functions } = analyze(profile)
+    const leaf = functions.find((f) => {
+      return f.functionName === 'generateAriaTree'
+    })
+    expect(leaf?.selfSamples).toBe(3)
+    expect(leaf?.totalActivePercent).toBe(100)
+  })
+
+  it('picks the profile with the most samples', () => {
+    const profile = cpuProfileFromChromeTrace({
+      traceEvents: [
+        { name: 'Profile', id: 'small', args: { data: { startTime: 0 } } },
+        makeTrace({ id: 'small', samples: [3] }),
+        { name: 'Profile', id: 'big', args: { data: { startTime: 0 } } },
+        makeTrace({ id: 'big', samples: [3, 3, 3, 3] }),
+      ],
+    })
+    expect(profile.samples).toHaveLength(4)
+  })
+
+  it('accepts a raw event array', () => {
+    const profile = cpuProfileFromChromeTrace([
+      { name: 'Profile', id: '0x1', args: { data: { startTime: 0 } } },
+      makeTrace({ id: '0x1', samples: [3] }),
+    ])
+    expect(profile.samples).toEqual([3])
+  })
+
+  it('throws when the trace has no JS samples', () => {
+    expect(() => {
+      cpuProfileFromChromeTrace({ traceEvents: [{ name: 'RunTask' }] })
+    }).toThrow(/No JS CPU samples/)
   })
 })
