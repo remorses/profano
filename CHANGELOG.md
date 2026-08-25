@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0
+
+1. **New `profano workers request` command** — capture a V8 CPU profile of one fetch against a local Cloudflare Worker. Production cannot emit a `.cpuprofile`. This talks to the wrangler inspector, starts the V8 profiler, fetches the URL, and writes a file you can analyze with profano:
+
+   ```bash
+   wrangler dev --local --inspector-port 9230
+   profano workers request http://127.0.0.1:8788/ --warm
+   profano ./req.cpuprofile --sort total
+   ```
+
+   Works for any Worker. `--warm` hits the URL once first so isolate boot is not in the sample. `--inspector` accepts an HTTP origin (discovers `/json/list`) or a `ws://` debugger URL. `-o` names the output file.
+
+2. **Tab completions** — install shell completions so flags and subcommands complete:
+
+   ```bash
+   profano completions install
+   ```
+
 ## 0.2.0
 
 1. **Chrome Performance traces work with no convert step** — the Performance panel **Save profile** button writes Chromium trace JSON (`Trace-*.json`), not a V8 `.cpuprofile`. Pass that file to profano the same way you pass a CPU profile:
