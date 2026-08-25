@@ -38,6 +38,9 @@ profano ~/Downloads/Trace-20260817T115835.json --sort total
 
 # Show the top 50 functions (default 30)
 profano profile.cpuprofile -n 50
+
+# Profile one request to a local Cloudflare Worker
+profano workers request http://127.0.0.1:8788/
 ```
 
 Globs are expanded automatically, so you can pass multiple profiles at once.
@@ -154,6 +157,66 @@ profano ./tmp/cpu-profiles/CPU.*.cpuprofile
 Same signal rules apply as with Node: the profile is written on clean exit, `Ctrl+C` and `kill <pid>` (`SIGTERM`) both work, `kill -9` does not.
 
 Bun also supports `--cpu-prof-name <filename>` for a fixed output name and `--cpu-prof-interval <microseconds>` to change the sampling rate (default 1000μs).
+
+### Cloudflare Workers
+
+A Worker has **two** CPU profiles. Do not mix them.
+
+```diagram
+  wrangler check startup          wrangler dev + Profiler
+           │                                │
+           ▼                                ▼
+   isolate boot only                 one fetch only
+   (module eval,                    (route handler)
+    top-level init)
+           │                                │
+           └───────── .cpuprofile ──────────┘
+                          │
+                          ▼
+                       profano
+```
+
+`wrangler tail` `cpuTime` is a **total in milliseconds**. GraphQL `cpuTimeP50` is **microseconds**. Neither is a flamegraph. Production cannot emit a `.cpuprofile`. Capture locally, then trust the **function mix**, not the millisecond totals. Cloudflare CPUs differ from your laptop.
+
+Official docs: [check startup](https://developers.cloudflare.com/workers/wrangler/commands/general/), [request CPU in DevTools](https://developers.cloudflare.com/workers/observability/dev-tools/cpu-usage/).
+
+#### Startup
+
+From the Worker package directory (the folder with `wrangler.jsonc`):
+
+```bash
+wrangler check startup --outfile startup.cpuprofile
+profano startup.cpuprofile --sort total
+profano tree startup.cpuprofile -m 3
+```
+
+This profiles **isolate boot** only: module evaluation and top-level side effects. It does not include a request.
+
+The command writes a V8 `.cpuprofile` and prints a local summary (bundle size, active ms, GC). Those local ms will not match Cloudflare.
+
+**Exception: two wrangler configs.** Only if `wrangler check startup` errors with both a user `wrangler.json` and `.wrangler/deploy/config.json` that do not share a base path (common after a Vite Cloudflare build in `dist/rsc`). Then copy the **built** worker folder to a temp directory and run `check startup` there. Drop `secrets.required` in that copy if the check refuses without secrets. Do **not** copy the dist as the default path.
+
+#### Request
+
+Start the Worker with the inspector open. Any Cloudflare Worker works. The URL is just the local origin wrangler printed.
+
+```bash
+wrangler dev --local --ip 127.0.0.1 --port 8788 --inspector-port 9230 --inspector-ip 127.0.0.1
+```
+
+Then capture one fetch. `--warm` hits the URL once first so isolate boot is not in the sample.
+
+```bash
+profano workers request http://127.0.0.1:8788/ --warm
+profano ./req.cpuprofile --sort total
+profano tree ./req.cpuprofile -m 2
+```
+
+The first fetch without `--warm` includes isolate boot and first-time JIT. Pass `-o` to name the file. Pass `--inspector` if wrangler is not on port **9230**.
+
+You can still press **D** in the wrangler terminal and use the DevTools Profiler tab. `profano workers request` is the same capture for agents and scripts.
+
+See `profano workers request --help` for every flag.
 
 ### Chrome Performance traces
 
@@ -404,6 +467,28 @@ React 19.2 calls `performance.measure(componentName, { detail: { devtools: { tra
 ### Programmatic inspector
 
 For fine-grained control, use Node's built-in `node:inspector` module to start and stop the profiler around a specific code path and write the result to disk.
+
+## Shell Completions
+
+Enable Tab completion:
+
+```bash
+profano completions install
+```
+
+Restart your shell (or run `autoload -Uz compinit && compinit` for zsh). Then Tab works:
+
+```bash
+profano <TAB>
+profano workers <TAB>
+profano workers request --<TAB>
+```
+
+Completions stay up to date automatically. To remove:
+
+```bash
+profano completions uninstall
+```
 
 ## License
 

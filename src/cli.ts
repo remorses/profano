@@ -9,6 +9,7 @@ import { globSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { loadProfile, analyze, buildTree } from './parse.ts'
 import { formatTable, formatTree } from './format.ts'
+import { profileWorkerRequest } from './workers-profile.ts'
 
 const require = createRequire(import.meta.url)
 const packageJson = require('../package.json') as { version: string }
@@ -141,6 +142,54 @@ Use --min-percent to compact the tree by hiding nodes below a threshold (pruned 
     }
   })
 
+cli
+  .command(
+    'workers request <url>',
+    `Capture a V8 CPU profile of one HTTP request to a local Cloudflare Worker.
+
+Connects to the wrangler inspector, starts the V8 profiler, fetches the URL, then writes a .cpuprofile. Analyze it with profano afterwards.
+
+Start the Worker first with wrangler dev --local --inspector-port 9230. Production cannot emit a .cpuprofile; this is local only. Trust the function mix, not the millisecond totals.
+
+Pass --warm to hit the URL once before profiling so isolate boot is not in the sample.`,
+  )
+  .option(
+    '--inspector [url]',
+    z
+      .string()
+      .default('http://127.0.0.1:9230')
+      .describe('Inspector HTTP origin or ws:// debugger URL.'),
+  )
+  .option(
+    '-o, --outfile [path]',
+    z.string().default('./req.cpuprofile').describe('Where to write the .cpuprofile.'),
+  )
+  .option(
+    '--interval [us]',
+    z.int().default(100).describe('V8 sample interval in microseconds.'),
+  )
+  .option('--warm', 'Fetch the URL once before starting the profiler.')
+  .example('# Worker already running with --inspector-port 9230')
+  .example('profano workers request http://127.0.0.1:8788/')
+  .example('# Skip isolate boot in the sample')
+  .example('profano workers request http://127.0.0.1:8788/login --warm')
+  .example('# Write to a named file')
+  .example('profano workers request http://127.0.0.1:8788/ -o login.cpuprofile')
+  .action(async (url: string, options, { fs, console }) => {
+    const result = await profileWorkerRequest({
+      url,
+      inspector: options.inspector,
+      outfile: options.outfile,
+      interval: options.interval,
+      warm: options.warm,
+      writeFile: (path, data) => fs.writeFile(path, data, 'utf8'),
+    })
+    console.log(
+      `wrote ${result.outfile}  http=${result.status}  samples=${result.samples}`,
+    )
+  })
+
 cli.help()
+cli.completions()
 cli.version(packageJson.version)
-cli.parse()
+await cli.parse()
